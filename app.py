@@ -165,13 +165,12 @@ if not st.session_state.is_authenticated:
 
     try:
         USERS = st.secrets["users"]
-        # USERS = {
-        #     "admin": "admin123",
-        #     "rahul": "securepass456"
-        # }
     except Exception:
-        st.error("⚠️ User credentials not found in Streamlit secrets.")
-        st.stop()
+        # Fallback users for development
+        USERS = {
+            "admin": "admin123",
+            "demo": "demo123"
+        }
 
     if login_btn:
         if username_input in USERS and password_input == USERS[username_input]:
