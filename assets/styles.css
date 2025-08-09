@@ -1,0 +1,250 @@
+/* ===== GLOBAL STYLES ===== */
+
+/* Global Background */
+.stApp {
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+}
+
+/* Remove default padding */
+.block-container {
+    padding-top: 2rem !important;
+    padding-bottom: 2rem !important;
+}
+
+/* ===== LOGIN PAGE STYLES ===== */
+
+/* Main container */
+.login-main {
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    margin: 2rem auto;
+    max-width: 1000px;
+    border: 1px solid #e2e8f0;
+}
+
+.welcome-text {
+    font-size: 2.5rem;
+    font-weight: 600;
+    color: #4a5568;
+    margin-bottom: 0.5rem;
+}
+
+.brand-text {
+    color: #FF6B35;
+    font-weight: 700;
+}
+
+/* Social buttons */
+.social-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 20px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8f9fa;
+    color: #4a5568;
+    text-decoration: none;
+    margin-bottom: 10px;
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.social-btn:hover {
+    background: #e9ecef;
+    transform: translateY(-1px);
+}
+
+/* Divider */
+.divider {
+    text-align: center;
+    margin: 20px 0;
+    position: relative;
+    color: #a0aec0;
+}
+
+.divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #e2e8f0;
+}
+
+.divider span {
+    background: white;
+    padding: 0 15px;
+}
+
+/* Form elements */
+.form-label {
+    display: block;
+    font-weight: 500;
+    color: #4a5568;
+    margin-bottom: 5px;
+    font-size: 0.9rem;
+}
+
+.forgot-link {
+    color: #FF6B35;
+    text-decoration: none;
+    font-size: 0.9rem;
+    float: right;
+    margin-top: 5px;
+}
+
+.forgot-link:hover {
+    text-decoration: underline;
+    color: #e53e3e;
+}
+
+.register-text {
+    text-align: center;
+    margin-top: 20px;
+    color: #718096;
+}
+
+.register-link {
+    color: #FF6B35;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.register-link:hover {
+    color: #e53e3e;
+    text-decoration: underline;
+}
+
+/* ===== STREAMLIT OVERRIDES ===== */
+
+/* Text input styling - Consistent sizing for all inputs */
+.stTextInput {
+    width: 100% !important;
+}
+
+.stTextInput > div {
+    width: 100% !important;
+}
+
+.stTextInput > div > div {
+    width: 100% !important;
+}
+
+.stTextInput > div > div > input {
+    background: #f8f9fa !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    padding: 15px 16px !important;
+    font-size: 1rem !important;
+    transition: all 0.2s ease !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: 50px !important;
+}
+
+.stTextInput > div > div > input:focus {
+    border-color: #FF6B35 !important;
+    background: white !important;
+    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1) !important;
+}
+
+/* Ensure consistent height for all text inputs */
+.stTextInput > div > div > input[type="text"],
+.stTextInput > div > div > input[type="password"],
+.stTextInput > div > div > input[type="email"] {
+    height: 50px !important;
+    line-height: 20px !important;
+}
+
+/* Hide the show/hide password button */
+.stTextInput > div > div > button {
+    display: none !important;
+}
+
+/* Checkbox styling */
+.stCheckbox > label {
+    color: #4a5568 !important;
+    font-size: 0.9rem !important;
+}
+
+/* Button styling */
+.stButton > button {
+    width: 100% !important;
+    padding: 15px 20px !important;
+    background: linear-gradient(135deg, #FF6B35 0%, #e53e3e 100%) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-size: 1.1rem !important;
+    font-weight: 600 !important;
+    transition: all 0.2s !important;
+    margin-top: 10px !important;
+}
+
+.stButton > button:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 10px 25px rgba(255, 107, 53, 0.3) !important;
+    background: linear-gradient(135deg, #e53e3e 0%, #FF6B35 100%) !important;
+}
+
+/* Chat form button styling */
+div.stButton > button:first-child {
+    width: 100%;
+    height: 3em;
+    font-size: 1.1em;
+}
+
+/* Form submit button styling for login */
+.stFormSubmitButton > button {
+    width: 100% !important;
+    padding: 15px 20px !important;
+    background: linear-gradient(135deg, #FF6B35 0%, #e53e3e 100%) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-size: 1.1rem !important;
+    font-weight: 600 !important;
+    transition: all 0.2s !important;
+    margin-top: 10px !important;
+}
+
+.stFormSubmitButton > button:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 10px 25px rgba(255, 107, 53, 0.3) !important;
+    background: linear-gradient(135deg, #e53e3e 0%, #FF6B35 100%) !important;
+}
+
+/* ===== TYPOGRAPHY ===== */
+
+/* Custom title styling */
+.custom-title {
+    font-family: 'Lexend Deca', sans-serif;
+    color: #FF6B35; /* Bright Tonic orange */
+    font-size: 38px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    text-shadow: 0 2px 4px rgba(255, 107, 53, 0.2);
+}
+
+/* ===== RESPONSIVE DESIGN ===== */
+
+@media (max-width: 768px) {
+    .login-main {
+        margin: 1rem;
+        max-width: 100%;
+    }
+    
+    .custom-title {
+        font-size: 28px;
+    }
+    
+    .welcome-text {
+        font-size: 2rem;
+    }
+}

@@ -1,103 +1,32 @@
 import streamlit as st
-import fitz  # PyMuPDF
-import pandas as pd
-import openai
-import google.generativeai as genai
-import tempfile
-import re
-import logging
-import time
 import matplotlib.pyplot as plt
 import io
-import os
-import datetime
-# import plotly
-# import plotly.express as px
-# import plotly.graph_objects as go
+import pandas as pd
 import re
-import requests
-import base64
-import os
-from dotenv import load_dotenv
+import datetime
+import time
 
-# Load environment variables from .env file
-load_dotenv()
+# Import custom modules
+from utils import (
+    load_css, load_fonts, initialize_session_state, 
+    process_pdf, process_excel, process_csv, get_timestamp,
+    get_user_credentials, check_persistent_login, 
+    set_persistent_login, clear_persistent_login, logger
+)
+from api_handlers import (
+    extract_structured_info, generate_plot_code, 
+    get_perplexity_response, get_chat_prompt
+)
 
 # ✅ Must be the first Streamlit command
 st.set_page_config(page_title="TONIC AI Assistant", layout="wide")
 
-# ✅ Logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("TONIC AI")
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
-PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
-# ✅ Configure Gemini & OpenAI - SECURITY ISSUE: API keys should not be hardcoded
-# RECOMMENDATION: Use environment variables or Streamlit secrets
-try:
-    # genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # openai_client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-    # Use environment variables
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-except KeyError:
-    st.error("⚠️ API keys not found in Streamlit secrets. Please configure them.")
-    st.stop()
+# Load CSS and fonts
+load_css("assets/styles.css")
+load_fonts()
 
-# ✅ Initialize session state
-if 'sessions' not in st.session_state:
-    st.session_state.sessions = {'Default': []}
-if 'current_session' not in st.session_state:
-    st.session_state.current_session = 'Default'
-
-# ✅ Authentication with persistent login
-if "is_authenticated" not in st.session_state:
-    st.session_state.is_authenticated = False
-
-# Check for persistent login using query parameters
-def check_persistent_login():
-    """Check if user has persistent login token"""
-    query_params = st.query_params
-    if "auth_token" in query_params and "username" in query_params and "login_time" in query_params:
-        username = query_params["username"]
-        login_time = query_params["login_time"]
-        
-        # Check if token is still valid (7 days expiry)
-        try:
-            login_timestamp = float(login_time)
-            current_time = time.time()
-            # Token expires after 7 days (604800 seconds)
-            if current_time - login_timestamp > 604800:
-                st.warning("⚠️ Your login session has expired. Please log in again.")
-                clear_persistent_login()
-                return False
-        except (ValueError, TypeError):
-            clear_persistent_login()
-            return False
-        
-        # Simple token validation (in production, use proper JWT or secure tokens)
-        expected_token = f"tonic_auth_{username}_{login_time}_2024"
-        if query_params["auth_token"] == expected_token:
-            st.session_state.is_authenticated = True
-            st.session_state.logged_in_user = username
-            return True
-    return False
-
-def set_persistent_login(username):
-    """Set persistent login by updating URL parameters"""
-    # Simple token generation (in production, use proper JWT or secure tokens)
-    login_time = str(time.time())
-    auth_token = f"tonic_auth_{username}_{login_time}_2024"
-    st.query_params["auth_token"] = auth_token
-    st.query_params["username"] = username
-    st.query_params["login_time"] = login_time
-
-def clear_persistent_login():
-    """Clear persistent login tokens"""
-    params_to_clear = ["auth_token", "username", "login_time"]
-    for param in params_to_clear:
-        if param in st.query_params:
-            del st.query_params[param]
-
+# Initialize session state
+initialize_session_state()
 # Check for persistent login on page load
 if not st.session_state.is_authenticated:
     check_persistent_login()
@@ -115,183 +44,6 @@ if not st.session_state.is_authenticated:
 
 
 if not st.session_state.is_authenticated:
-    # ==== Modern Login UI CSS ====
-    st.markdown(
-        """
-        <style>
-        /* Global Background */
-        .stApp {
-            background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
-        }
-        
-        /* Main container */
-        .login-main {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
-            margin: 2rem auto;
-            max-width: 1000px;
-            border: 1px solid #e2e8f0;
-        }
-        
-        .welcome-text {
-            font-size: 2.5rem;
-            font-weight: 600;
-            color: #4a5568;
-            margin-bottom: 0.5rem;
-        }
-        
-        .brand-text {
-            color: #FF6B35;
-            font-weight: 700;
-        }
-        
-        .social-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 12px 20px;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            background: #f8f9fa;
-            color: #4a5568;
-            text-decoration: none;
-            margin-bottom: 10px;
-            transition: all 0.2s;
-            cursor: pointer;
-        }
-        
-        .social-btn:hover {
-            background: #e9ecef;
-            transform: translateY(-1px);
-        }
-        
-        .divider {
-            text-align: center;
-            margin: 20px 0;
-            position: relative;
-            color: #a0aec0;
-        }
-        
-        .divider::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 0;
-            right: 0;
-            height: 1px;
-            background: #e2e8f0;
-        }
-        
-        .divider span {
-            background: white;
-            padding: 0 15px;
-        }
-        
-        .form-label {
-            display: block;
-            font-weight: 500;
-            color: #4a5568;
-            margin-bottom: 5px;
-            font-size: 0.9rem;
-        }
-        
-        .forgot-link {
-            color: #FF6B35;
-            text-decoration: none;
-            font-size: 0.9rem;
-            float: right;
-            margin-top: 5px;
-        }
-        
-        .forgot-link:hover {
-            text-decoration: underline;
-            color: #e53e3e;
-        }
-        
-        .register-text {
-            text-align: center;
-            margin-top: 20px;
-            color: #718096;
-        }
-        
-        .register-link {
-            color: #FF6B35;
-            text-decoration: none;
-            font-weight: 500;
-        }
-        
-        .register-link:hover {
-            color: #e53e3e;
-            text-decoration: underline;
-        }
-        
-        /* Streamlit overrides */
-        .stTextInput {
-            width: 100% !important;
-        }
-        
-        .stTextInput > div {
-            width: 100% !important;
-        }
-        
-        .stTextInput > div > div {
-            width: 100% !important;
-        }
-        
-        .stTextInput > div > div > input {
-            background: #f8f9fa !important;
-            border: 1px solid #e2e8f0 !important;
-            border-radius: 8px !important;
-            padding: 15px 16px !important;
-            font-size: 1rem !important;
-            transition: all 0.2s ease !important;
-            width: 100% !important;
-            box-sizing: border-box !important;
-            min-width: 0 !important;
-            max-width: 100% !important;
-        }
-        
-        .stTextInput > div > div > input:focus {
-            border-color: #FF6B35 !important;
-            background: white !important;
-            box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1) !important;
-        }
-        
-        .stCheckbox > label {
-            color: #4a5568 !important;
-            font-size: 0.9rem !important;
-        }
-        
-        .stButton > button {
-            width: 100% !important;
-            padding: 15px 20px !important;
-            background: linear-gradient(135deg, #FF6B35 0%, #e53e3e 100%) !important;
-            color: white !important;
-            border: none !important;
-            border-radius: 8px !important;
-            font-size: 1.1rem !important;
-            font-weight: 600 !important;
-            transition: all 0.2s !important;
-            margin-top: 10px !important;
-        }
-        
-        .stButton > button:hover {
-            transform: translateY(-1px) !important;
-            box-shadow: 0 10px 25px rgba(255, 107, 53, 0.3) !important;
-            background: linear-gradient(135deg, #e53e3e 0%, #FF6B35 100%) !important;
-        }
-        
-        /* Remove default padding */
-        .block-container {
-            padding-top: 2rem !important;
-            padding-bottom: 2rem !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
 
     # Create main container
     st.markdown('<div class="login-main">', unsafe_allow_html=True)
@@ -355,29 +107,30 @@ if not st.session_state.is_authenticated:
         #     unsafe_allow_html=True
         # )
         
-        # Form fields with better spacing
-        st.markdown('<div style="margin-top: 25px;">', unsafe_allow_html=True)
-        st.markdown('<label class="form-label">Email</label>', unsafe_allow_html=True)
-        username_input = st.text_input("", placeholder="example@gmail.com", label_visibility="collapsed", key="username")
+        # Form fields with better spacing - Using form for Enter key support
+        with st.form("login_form", clear_on_submit=False):
+            st.markdown('<div style="margin-top: 25px;">', unsafe_allow_html=True)
+            st.markdown('<label class="form-label">Email</label>', unsafe_allow_html=True)
+            username_input = st.text_input("", placeholder="example@gmail.com", label_visibility="collapsed", key="username")
+            
+            st.markdown('<div style="margin-top: 20px;">', unsafe_allow_html=True)
+            st.markdown('<label class="form-label">Password</label>', unsafe_allow_html=True)
+            password_input = st.text_input("", placeholder="••••••••••", label_visibility="collapsed", key="password", type="password")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Remember me and forgot password
+            st.markdown('<div style="margin-top: 15px; margin-bottom: 25px;">', unsafe_allow_html=True)
+            col_check, col_forgot = st.columns([1, 1])
+            with col_check:
+                remember_me = st.checkbox("Remember me", value=True)
+            with col_forgot:
+                st.markdown('<a href="#" class="forgot-link">Forgot Password?</a>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Login button - Now inside form for Enter key support
+            login_btn = st.form_submit_button("Login", type="primary", use_container_width=True)
         
-        st.markdown('<div style="margin-top: 20px;">', unsafe_allow_html=True)
-        st.markdown('<label class="form-label">Password</label>', unsafe_allow_html=True)
-        password_input = st.text_input("", type="password", placeholder="••••••••••", label_visibility="collapsed", key="password")
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Remember me and forgot password
-        st.markdown('<div style="margin-top: 15px; margin-bottom: 25px;">', unsafe_allow_html=True)
-        col_check, col_forgot = st.columns([1, 1])
-        with col_check:
-            remember_me = st.checkbox("Remember me", value=True)
-        with col_forgot:
-            st.markdown('<a href="#" class="forgot-link">Forgot Password?</a>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Login button
-        login_btn = st.button("Login", type="primary", use_container_width=True)
-        
-        # Register link
+        # Register link (outside form)
         st.markdown('<div class="register-text" style="margin-top: 20px;">Don\'t have an account? <a href="#" class="register-link">Register</a></div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
@@ -390,65 +143,9 @@ if not st.session_state.is_authenticated:
 
 
 
-# if not st.session_state.is_authenticated:
-#     # ==== Custom CSS Styling ====
-#     st.markdown(
-#         """
-#         <style>
-#         .login-box {
-#             background-color: white;
-#             border-radius: 16px;
-#             padding: 2rem;
-#             border: 2px solid #D95B35;
-#             max-width: 2000px;
-#             min-height: 4000px;
-#             margin: 4rem auto;
-#             box-shadow: 0 0 12px rgba(0,0,0,0.1);
-#         }
-#         .login-header {
-#             text-align: center;
-#             font-size: 1.75rem;
-#             font-weight: bold;
-#             color: #D95B35;
-#             margin-bottom: 1rem;
-#         }
-#         .stButton > button {
-#             background-color: #D95B35;
-#             color: white;
-#             width: 100%;
-#             font-weight: bold;
-#             border: none;
-#             border-radius: 8px;
-#         }
-#         .stTextInput > div > input {
-#             border: 1px solid #D95B35;
-#             border-radius: 4px;
-#         }
-#         </style>
-#         """,
-#         unsafe_allow_html=True
-#     )
 
-#     # ==== Login UI ====
-#     st.markdown('<div class="login-box">', unsafe_allow_html=True)
 
-#     # Local image
-#     st.image("Asset-3.png", width=120)
-
-#     st.markdown('<div class="login-header">🔐 TONIC AI Login</div>', unsafe_allow_html=True)
-
-#     username_input = st.text_input("Username")
-#     password_input = st.text_input("Password", type="password")
-#     login_btn = st.button("Login")
-
-    try:
-        USERS = st.secrets["users"]
-    except Exception:
-        # Fallback users for development
-        USERS = {
-            "admin": "admin123",
-            "demo": "demo123"
-        }
+    USERS = get_user_credentials()
 
     if login_btn:
         if username_input in USERS and password_input == USERS[username_input]:
@@ -474,37 +171,7 @@ if not st.session_state.is_authenticated:
 
 
    
-#     try:
-#         # USERS = st.secrets["users"]
-#         USERS = {
-#     "admin": "admin123",
-#     "rahul": "securepass456"
-# }
-#     except Exception:
-#         st.error("⚠️ User credentials not found in Streamlit secrets.")
-#         st.stop()
 
-#     if login_btn:
-#         if username_input in USERS and password_input == USERS[username_input]:
-#             st.session_state.is_authenticated = True
-#             st.session_state.username = username_input
-#             st.success("✅ Login successful")
-#             st.rerun()
-#         else:
-#             st.error("❌ Invalid username or password")
-#     st.stop()
-
-# ✅ Init session state variables
-for key in ["knowledge_base", "sessions", "current_session", "tables", "plot_buffer"]:
-    if key not in st.session_state:
-        if key == "sessions":
-            st.session_state[key] = {"Default": []}
-        elif key == "current_session":
-            st.session_state[key] = "Default"
-        elif key in ["tables"]:
-            st.session_state[key] = {}
-        else:
-            st.session_state[key] = []
 
 # ================= Sidebar =================
 with st.sidebar:
@@ -622,22 +289,7 @@ with st.sidebar:
 # =============== Main App ==================
 # st.sidebar.image("Assets-04.png", width=150)
 
-# Inject Lexend Deca font and styling
-st.markdown("""
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@300;500;700&display=swap" rel="stylesheet">
-    <style>
-        .custom-title {
-            font-family: 'Lexend Deca', sans-serif;
-            color: #FF6B35; /* Bright Tonic orange */
-            font-size: 38px;
-            font-weight: 600;
-            margin-bottom: 10px;
-            text-shadow: 0 2px 4px rgba(255, 107, 53, 0.2);
-        }
-    </style>
-""", unsafe_allow_html=True)
+
 
 col1, col2 = st.columns([2, 4])
 with col1:
@@ -663,71 +315,7 @@ with col2:
 uploaded_files = st.file_uploader("📁 Upload PDF/XLSX/CSV files", type=["pdf", "xlsx", "csv"], accept_multiple_files=True)
 
 
-def process_pdf(file):
-    """Extract text from PDF file"""
-    try:
-        doc = fitz.open(stream=file.read(), filetype="pdf")
-        text = ""
-        for page in doc:
-            text += page.get_text()
-        return text
-    except Exception as e:
-        logger.error(f"PDF processing error: {e}")
-        return ""
 
-def process_excel(file):
-    """Extract text from Excel file"""
-    try:
-        excel_data = pd.read_excel(file, sheet_name=None)
-        text = ""
-        for sheet, df in excel_data.items():
-            text += f"\n--- Sheet: {sheet} ---\n{df.to_string(index=False)}"
-        return text
-    except Exception as e:
-        logger.error(f"Excel processing error: {e}")
-        return ""
-
-def process_csv(file):
-    """Extract text from CSV file"""
-    try:
-        df = pd.read_csv(file)
-        return df.to_string(index=False)
-    except Exception as e:
-        logger.error(f"CSV processing error: {e}")
-        return ""
-
-
-
-def extract_structured_info(text, filename):
-    """Extract structured information using Gemini with table formatting instructions"""
-    base_prompt = """Extract structured information from this document for building a knowledge base.
-    
-    IMPORTANT: When presenting tabular data, please format it as a proper HTML table using <table>, <tr>, <td>, <th> tags.
-    For example:
-    <table>
-    <tr><th>Column 1</th><th>Column 2</th></tr>
-    <tr><td>Data 1</td><td>Data 2</td></tr>
-    </table>
-    
-    Alternatively, you can use markdown table format:
-    | Column 1 | Column 2 |
-    |----------|----------|
-    | Data 1   | Data 2   |
-    
-    Document content: """
-    
-    try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        # Limit text to prevent token limit issues
-        text_chunk = text[:30000]
-        gemini_response = model.generate_content(base_prompt + text_chunk)
-        structured_output = gemini_response.text
-        logger.info(f"Extracted structured data from {filename}")
-        return structured_output
-    except Exception as e:
-        logger.error(f"Gemini failed on {filename}: {e}")
-        st.error(f"Gemini failed to process {filename}")
-        return ""
 
 # File processing with improved error handling
 if uploaded_files and not st.session_state.knowledge_base:
@@ -759,36 +347,11 @@ if uploaded_files and not st.session_state.knowledge_base:
 
 st.subheader("💬 Ask a Question")
 
-# Chat input with better UX
-# col1, col2 = st.columns([4, 1])
-# with col1:
-#     user_input = st.text_input("Type your question", key="user_input", placeholder="Ask me anything about your uploaded documents or any general question...")
-# with col2:
-#     st.write("")  # Add some spacing
-#     submit_btn = st.button("📤 Send", type="primary")
 
-# # Also allow Enter key submission
-# if user_input and (submit_btn or user_input != st.session_state.get('last_input', '')):
-#     st.session_state.last_input = user_input
 
-# Initialize session state
-if "user_input" not in st.session_state:
-    st.session_state.user_input = ""
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
 
 # --- UI layout ---
-
-st.markdown("""
-    <style>
-    div.stButton > button:first-child {
-        width: 100%;
-        height: 3em;
-        font-size: 1.1em;
-    }
-    </style>
-""", unsafe_allow_html=True)
 
 
 col1, col2 = st.columns([6, 0.5])
@@ -816,167 +379,13 @@ if submitted and user_input.strip():
 
 
 
-# # --- Display chat history ---
-# if st.session_state.messages:
-#     st.markdown("### 💬 Chat History")
-#     for msg in st.session_state.messages:
-#         st.write(f"👤 {msg}")
+
 
 # --- Display latest message only ---
 if st.session_state.get("messages"):
     latest_msg = st.session_state.messages[-1]  # Get last item
     st.markdown("### 💬 Your Query")
     st.write(f"👤 {latest_msg}")
-
-
-
-
-
-def extract_code(text):
-    """Extract Python code from markdown code blocks"""
-    match = re.search(r"```(?:python)?\n(.*?)```", text, re.DOTALL)
-    return match.group(1).strip() if match else text.strip()
-
-def generate_plot_code(knowledge, query, reply):
-    """Generate matplotlib code for visualization"""
-    system_prompt = "You are a Python assistant. Output only valid matplotlib code using data given to you. You can generate multiple plots, so generate code in that way. If there is no sufficient Knowledge Base data, rely on the Answer"
-    user_prompt = f"""Knowledge Base:\n{knowledge}\n\nUser Query:\n{query}\n\nAnswer:\n{reply}"""
-    try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.3
-        )
-        return extract_code(response.choices[0].message.content)
-    except Exception as e:
-        logger.error(f"Code generation failed: {e}")
-        return None
-
-def get_gemini_response(prompt, conversation_history=None):
-    """Get response from Gemini with conversation context"""
-    try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        
-        # Build conversation context
-        if conversation_history:
-            context = "Previous conversation:\n"
-            for i, msg in enumerate(conversation_history[-5:]):  # Last 5 messages for context
-                context += f"User: {msg['q']}\nAssistant: {msg['a']}\n\n"
-            
-            full_prompt = context + "Current question:\n" + prompt
-        else:
-            full_prompt = prompt
-            
-        response = model.generate_content(full_prompt)
-        return response.text
-    except Exception as e:
-        logger.error(f"Gemini API error: {e}")
-        return f"❌ Gemini error: {e}"
-    
-def get_openai_response(prompt, conversation_history=None):
-    """
-    Get response from OpenAI chat model using `openai_client.chat.completions.create`.
-    Supports conversation history (last 5 turns).
-    """
-    try:
-        messages = []
-
-        # Add past messages if available
-        if conversation_history:
-            for turn in conversation_history[-5:]:
-                messages.append({"role": "user", "content": turn["q"]})
-                messages.append({"role": "assistant", "content": turn["a"]})
-
-        # Append the current prompt
-        messages.append({"role": "user", "content": prompt})
-
-        # Create the completion
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            temperature=0.7
-        )
-
-        return response.choices[0].message.content
-
-    except Exception as e:
-        logger.error(f"OpenAI API error: {e}")
-        return f"❌ OpenAI error: {e}"
-
-
-def get_perplexity_response(prompt, conversation_history=None, model="sonar"):
-    """
-    Get response from Perplexity API with optional conversation history.
-    """
-    try:
-        headers = {
-            "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
-            "Content-Type": "application/json"
-        }
-
-        # Build OpenAI-style messages
-        messages = []
-
-        if conversation_history:
-            for turn in conversation_history[-5:]:
-                messages.append({"role": "user", "content": turn["q"]})
-                messages.append({"role": "assistant", "content": turn["a"]})
-
-        messages.append({"role": "user", "content": prompt})
-
-        payload = {
-            "model": model,
-            "messages": messages,
-            "temperature": 0.7,
-            "stream": False
-        }
-
-        response = requests.post(PERPLEXITY_API_URL, headers=headers, json=payload)
-
-        if response.ok:
-            # Optional: Extract citation metadata if present
-            
-            # citations_dic = response.json()["search_results"]
-            citations = ""
-
-            for j in response.json()["search_results"]:
-                tmp_c = j.get('title') + " - " + j.get('url')
-                print(tmp_c)
-                citations = citations + tmp_c + " \n "
-            
-            return response.json()["choices"][0]["message"]["content"], citations
-
-        else:
-            logger.error(f"Perplexity API error: {response.status_code} - {response.text}")
-            return f"❌ Perplexity error: {response.status_code}: {response.text}", ""
-
-    except Exception as e:
-        logger.error(f"Perplexity API error: {e}")
-        return f"❌ Perplexity error: {e}", ""
-
-# if user_input and (submitted or user_input != st.session_state.get('last_input', '')):
-
-
-
-# === INITIAL STATE SETUP === #
-if "plot_buffer" not in st.session_state:
-    st.session_state.plot_buffer = None
-if "plot_generated" not in st.session_state:
-    st.session_state.plot_generated = False
-if "plot_code" not in st.session_state:
-    st.session_state.plot_code = ""
-if "tables" not in st.session_state:
-    st.session_state.tables = {}
-if "last_input" not in st.session_state:
-    st.session_state.last_input = ""
-if "gemini_reply" not in st.session_state:
-    st.session_state.gemini_reply = ""
-if "gemini_sources" not in st.session_state:
-    st.session_state.gemini_sources = []
-
 
 
 
@@ -991,61 +400,7 @@ if new_input:
     st.session_state.plot_code = None
     st.session_state.tables[st.session_state.current_session] = []
 
-    # base_chat_prompt = """<...your full base prompt here...>"""
-    base_chat_prompt = (
-"You are an intelligent assistant. Use the extracted knowledge base if it's available to answer user queries. "
-"In addition, rely on your own knowledge whenever needed, based on the user's input. "
-"If the answer cannot be found in the knowledge base, use your general understanding to respond.\n\n"
-
-"IMPORTANT FORMATTING:\n"
-"- When presenting tabular data, format it as markdown tables using `|` symbols.\n"
-"- Example:\n"
-"  | Column 1 | Column 2 |\n"
-"  |----------|----------|\n"
-"  | Data 1   | Data 2   |\n\n"
-
-"**POINTS TO KEEP IN MIND:**\n"
-"- If the user requests Excel-like output, assume tabular format and provide markdown directly.\n"
-"  Mention that this product allows instant download of the generated table.\n"
-"- If the user requests graphs, plots, or charts, do not generate them. "
-"A separate module in the system handles visualizations.\n"
-"- If relevant information isn't found in the knowledge base, use your own understanding to answer accurately.\n"
-"- Always consider the user input carefully. Combine it with the knowledge base and your knowledge to generate accurate and context-aware responses.\n"
-"- Maintain conversational context by referring to previous user queries where appropriate. If the query is entirely new, don't use previous knowledge.\n\n"
-
-"**SPECIAL FORMAT — MEDIA PLAN REQUESTS:**\n"
-"- If the user asks for a *media plan* or requests *marketing metrics across platforms*, present the data in TONIC-style format.\n"
-"- TONIC-style table format:\n"
-"  1. Start with a title (e.g., 'Plan KSA') on top.\n"
-"  2. First table row = main metric headers: Medium, Clicks, CPC, Impressions, CPM, Views, CPV, CTR, Leads, CPL, Total Cost.\n"
-"  3. Second row = subheaders (e.g., Channel, Exp. Link Clicks, etc.).\n"
-"  4. List each platform (e.g., TikTok, YouTube) in a row with corresponding metrics.\n"
-"  5. At the bottom, include summary rows: Net Total, Total Clicks, Impressions, Views, etc.\n"
-"  6. Format the entire table in markdown using `|`, just like other tables.\n"
-"  7. Do not explain the table — output the TONIC table directly with any other requested info (like recommendations or insights).\n"
-"- Example:\n"
-"\n"
-"  Plan KSA  \n"
-"  | Medium | Clcks | CPC | Impressions | CPM | Views | CPV | CTR | Leads | CPL | Total Cost |\n"
-"  | Channel | Exp. Link Clicks | Exp. Tonic CPC | Exp. Impressions | Exp. Tonic CPM | Video Views | Exp. Tonic CPV | Exp.CTR | | Budget |\n"
-"  | Tiktok Ad | 11,630 | AED1.29 | 2,907,540 | AED5.16 | 67,843 | AED0.22 | 0.40 | 150 | 100 | 15000 |\n"
-"  | Facebook/Instagram | 18,367 | AED1.47 | 6,679,035 | AED4.04 | 734,694 | AED0.04 | 0.28 | 270 | 100 | 27000 |\n"
-"  | Twitter X | 4,511 | AED1.40 | 1,051,709 | AED5.99 | 11,429 | AED0.55 | 0.43 | 63 | 100 | 6300 |\n"
-"  | YouTube Ads | 5,630 | AED2.13 | 806,248 | AED14.88 | 544,218 | AED0.02 | 0.70 | 120 | 100 | 12000 |\n"
-"  | Search Ads | 5,246 | AED2.21 |  |  |  |  |  | 116 | 100 | 11600 |\n"
-"  | Google Display Ads | 7,850 | AED1.03 | 2,448,980 | AED3.31 | NA | NA | 0.32 | 81 | 100 | 8100 |\n"
-"  | | | | | | | | | | | |\n"
-"  | | | | | | | | Net Total | AED80,000 | | |\n"
-"  | | | | | | | | Total Clicks | 53,235 | | |\n"
-"  | | | | | | | | Total Impressions | 13,893,513 | | |\n"
-"  | | | | | | | | Total Views | 1,358,183 | | |\n\n"
-
-"- Use this format **only** if the user's query is about media planning, digital ad performance, or channel-level budget/performance comparison.\n"
-
-"- Also provide list of sources/URLs as Sources:\n"
-"  from where you have gathered all the data (list no more than 5)\n"
-"  - ALSO NEVER LIST ANY SOURCES RELATED TO FORMATTING, ETC. LIST ONLY DATA SOURCES"
-)
+    base_chat_prompt = get_chat_prompt()
 
     kb = st.session_state.knowledge_base
     if isinstance(kb, list):
@@ -1070,7 +425,7 @@ if new_input:
     # if st.session_state.get("plot_buffer"):
     #     plot_data = base64.b64encode(st.session_state.plot_buffer.getvalue()).decode("utf-8")
 
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = get_timestamp()
     st.session_state.sessions[curr_id].append({
         "q": user_input,
         "a": gemini_reply,
@@ -1219,23 +574,7 @@ if curr_id in st.session_state.sessions and st.session_state.sessions[curr_id]:
                 st.markdown("**🤖 Assistant:**")
                 st.markdown(msg['a'])
 
-            # with st.expander(f"💬 Message {actual_index}: {msg['q'][:50]}... | {timestamp}"):
-            #     st.markdown(f"**🙋 User:** {msg['q']}")
-            #     st.markdown("**🤖 Assistant:**")
-            #     st.markdown(msg['a'])
 
-            #     # Display plot if it exists
-            #     if msg.get("plot"):
-            #         st.markdown("**📊 Generated Plot:**")
-            #         st.image(f"data:image/png;base64,{msg['plot']}", use_column_width=True)
-
-            #     if st.button(f"📋 Copy Response", key=f"copy_{actual_index}"):
-            #         st.code(msg['a'])
-
-
-            #     # Add copy button for individual messages
-            #     if st.button(f"📋 Copy Response", key=f"copy_{actual_index}"):
-            #         st.code(msg['a'])
     
     # Add export chat history functionality
     if st.button("📥 Export Chat History"):
