@@ -1,0 +1,46 @@
+.App {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.main-content {
+  flex: 1;
+  padding: 20px 0;
+}
+
+.sidebar {
+  width: 300px;
+  background: white;
+  border-right: 1px solid #e2e8f0;
+  padding: 20px;
+  height: 100vh;
+  overflow-y: auto;
+  position: fixed;
+  left: 0;
+  top: 0;
+}
+
+.content-area {
+  margin-left: 300px;
+  padding: 20px;
+  min-height: 100vh;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: relative;
+  }
+  
+  .content-area {
+    margin-left: 0;
+  }
+}
