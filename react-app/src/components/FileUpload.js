@@ -1,44 +1,42 @@
-import React, { useCallback } from 'react';
-import { useDropzone } from 'react-dropzone';
-import { Upload, File, X } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Upload, File, X, CheckCircle, AlertCircle } from 'lucide-react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 
 const UploadContainer = styled.div`
   background: white;
   border-radius: 12px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
 `;
 
 const UploadHeader = styled.div`
-  padding: 20px;
-  border-bottom: 1px solid #e2e8f0;
-  background: #f8f9fa;
+  text-align: center;
+  margin-bottom: 24px;
 `;
 
 const UploadTitle = styled.h3`
-  color: #4a5568;
-  margin: 0;
-  font-size: 1.2rem;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  color: #2d3748;
+  margin: 0 0 8px 0;
+  font-weight: 600;
+  font-size: 18px;
 `;
 
-const Dropzone = styled.div`
-  border: 2px dashed #e2e8f0;
-  border-radius: 8px;
+const UploadSubtitle = styled.p`
+  color: #718096;
+  margin: 0;
+  font-size: 14px;
+`;
+
+const DropZone = styled.div`
+  border: 2px dashed ${props => props.isDragOver ? '#FF6B35' : '#e2e8f0'};
+  border-radius: 12px;
   padding: 40px 20px;
   text-align: center;
-  cursor: pointer;
+  background: ${props => props.isDragOver ? 'rgba(255, 107, 53, 0.05)' : '#f8f9fa'};
   transition: all 0.2s ease;
-  background: #f8f9fa;
-  
-  ${props => props.isDragActive && `
-    border-color: #FF6B35;
-    background: rgba(255, 107, 53, 0.05);
-  `}
+  cursor: pointer;
   
   &:hover {
     border-color: #FF6B35;
@@ -46,66 +44,112 @@ const Dropzone = styled.div`
   }
 `;
 
+const DropZoneContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+`;
+
 const UploadIcon = styled.div`
-  font-size: 3rem;
-  color: #718096;
-  margin-bottom: 15px;
-  
-  ${props => props.isDragActive && `
-    color: #FF6B35;
-  `}
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #FF6B35 0%, #e53e3e 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
 `;
 
-const UploadText = styled.p`
+const DropZoneText = styled.div`
   color: #4a5568;
-  margin: 0 0 10px 0;
-  font-size: 1.1rem;
+  font-weight: 500;
 `;
 
-const UploadSubtext = styled.p`
+const DropZoneHint = styled.div`
   color: #718096;
-  margin: 0;
-  font-size: 0.9rem;
+  font-size: 14px;
+`;
+
+const FileInput = styled.input`
+  display: none;
 `;
 
 const FileList = styled.div`
-  padding: 20px;
+  margin-top: 20px;
 `;
 
 const FileItem = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px;
-  background: #f8f9fa;
+  padding: 12px 16px;
+  background: white;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   margin-bottom: 8px;
-  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    border-color: #FF6B35;
+    box-shadow: 0 2px 4px rgba(255, 107, 53, 0.1);
+  }
 `;
 
 const FileInfo = styled.div`
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  flex: 1;
 `;
 
 const FileIcon = styled.div`
-  color: #FF6B35;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: ${props => {
+    if (props.type === 'pdf') return '#e53e3e';
+    if (props.type === 'excel') return '#38a169';
+    if (props.type === 'csv') return '#3182ce';
+    return '#718096';
+  }};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
 `;
 
 const FileDetails = styled.div`
-  display: flex;
-  flex-direction: column;
+  flex: 1;
 `;
 
-const FileName = styled.span`
+const FileName = styled.div`
+  color: #2d3748;
   font-weight: 500;
-  color: #4a5568;
+  font-size: 14px;
+  margin-bottom: 2px;
 `;
 
-const FileSize = styled.span`
-  font-size: 0.8rem;
+const FileSize = styled.div`
   color: #718096;
+  font-size: 12px;
+`;
+
+const FileStatus = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const StatusIcon = styled.div`
+  color: ${props => {
+    if (props.status === 'success') return '#38a169';
+    if (props.status === 'error') return '#e53e3e';
+    return '#718096';
+  }};
 `;
 
 const RemoveButton = styled.button`
@@ -115,53 +159,83 @@ const RemoveButton = styled.button`
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
   
   &:hover {
     background: rgba(229, 62, 62, 0.1);
   }
 `;
 
-const SupportedFormats = styled.div`
-  padding: 15px 20px;
-  background: #f8f9fa;
-  border-top: 1px solid #e2e8f0;
-  font-size: 0.9rem;
-  color: #718096;
+const UploadButton = styled.button`
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, #FF6B35 0%, #e53e3e 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 20px;
+  
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 25px rgba(255, 107, 53, 0.3);
+  }
+  
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
 `;
 
-function FileUpload({ onFileUpload }) {
-  const [files, setFiles] = React.useState([]);
+const ProgressBar = styled.div`
+  width: 100%;
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 12px;
+`;
 
-  const onDrop = useCallback((acceptedFiles) => {
-    const newFiles = acceptedFiles.map(file => ({
-      file,
-      id: Math.random().toString(36).substr(2, 9),
-      name: file.name,
-      size: file.size,
-      type: file.type
-    }));
-    
-    setFiles(prev => [...prev, ...newFiles]);
-    onFileUpload(acceptedFiles);
-    
-    toast.success(`Added ${acceptedFiles.length} file(s)`);
-  }, [onFileUpload]);
+const ProgressFill = styled.div`
+  height: 100%;
+  background: linear-gradient(135deg, #FF6B35 0%, #e53e3e 100%);
+  width: ${props => props.progress}%;
+  transition: width 0.3s ease;
+`;
 
-  const removeFile = (fileId) => {
-    setFiles(prev => prev.filter(f => f.id !== fileId));
-    toast.success('File removed');
+function FileUpload({ onFileUpload, isUploading = false }) {
+  const [files, setFiles] = useState([]);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const fileInputRef = useRef(null);
+
+  const getFileType = (filename) => {
+    const ext = filename.toLowerCase().split('.').pop();
+    if (ext === 'pdf') return 'pdf';
+    if (['xlsx', 'xls'].includes(ext)) return 'excel';
+    if (ext === 'csv') return 'csv';
+    return 'unknown';
   };
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-      'application/vnd.ms-excel': ['.xls'],
-      'text/csv': ['.csv']
-    },
-    multiple: true
-  });
+  const getFileIcon = (type) => {
+    switch (type) {
+      case 'pdf': return 'PDF';
+      case 'excel': return 'XL';
+      case 'csv': return 'CSV';
+      default: return '?';
+    }
+  };
 
   const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 Bytes';
@@ -171,54 +245,175 @@ function FileUpload({ onFileUpload }) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    addFiles(droppedFiles);
+  };
+
+  const handleFileSelect = (e) => {
+    const selectedFiles = Array.from(e.target.files);
+    addFiles(selectedFiles);
+  };
+
+  const addFiles = (newFiles) => {
+    const validFiles = newFiles.filter(file => {
+      const type = getFileType(file.name);
+      return type !== 'unknown';
+    });
+
+    if (validFiles.length !== newFiles.length) {
+      toast.error('Some files were skipped. Only PDF, Excel, and CSV files are supported.');
+    }
+
+    setFiles(prev => [...prev, ...validFiles]);
+  };
+
+  const removeFile = (index) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleUpload = async () => {
+    if (files.length === 0) {
+      toast.error('Please select files to upload');
+      return;
+    }
+
+    setUploadProgress(0);
+    
+    try {
+      // Simulate progress
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + 10;
+        });
+      }, 200);
+
+      await onFileUpload(files);
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+      
+      // Reset after successful upload
+      setTimeout(() => {
+        setFiles([]);
+        setUploadProgress(0);
+      }, 1000);
+      
+    } catch (error) {
+      setUploadProgress(0);
+      toast.error('Upload failed. Please try again.');
+    }
+  };
+
+  const handleDropZoneClick = () => {
+    fileInputRef.current?.click();
+  };
+
   return (
     <UploadContainer>
       <UploadHeader>
-        <UploadTitle>
-          <Upload size={20} />
-          Upload Files
-        </UploadTitle>
+        <UploadTitle>📁 Upload Documents</UploadTitle>
+        <UploadSubtitle>
+          Upload PDF, Excel, or CSV files to build your knowledge base
+        </UploadSubtitle>
       </UploadHeader>
-      
-      <div style={{ padding: '20px' }}>
-        <Dropzone {...getRootProps()} isDragActive={isDragActive}>
-          <input {...getInputProps()} />
-          <UploadIcon isDragActive={isDragActive}>
-            <Upload size={48} />
+
+      <DropZone
+        isDragOver={isDragOver}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={handleDropZoneClick}
+      >
+        <DropZoneContent>
+          <UploadIcon>
+            <Upload size={24} />
           </UploadIcon>
-          <UploadText>
-            {isDragActive ? 'Drop files here...' : 'Drag & drop files here, or click to select'}
-          </UploadText>
-          <UploadSubtext>
+          <DropZoneText>
+            Drag and drop files here, or click to browse
+          </DropZoneText>
+          <DropZoneHint>
             Supports PDF, Excel (.xlsx, .xls), and CSV files
-          </UploadSubtext>
-        </Dropzone>
-      </div>
+          </DropZoneHint>
+        </DropZoneContent>
+      </DropZone>
+
+      <FileInput
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept=".pdf,.xlsx,.xls,.csv"
+        onChange={handleFileSelect}
+      />
 
       {files.length > 0 && (
         <FileList>
-          {files.map((fileItem) => (
-            <FileItem key={fileItem.id}>
+          {files.map((file, index) => (
+            <FileItem key={index}>
               <FileInfo>
-                <FileIcon>
-                  <File size={20} />
+                <FileIcon type={getFileType(file.name)}>
+                  {getFileIcon(getFileType(file.name))}
                 </FileIcon>
                 <FileDetails>
-                  <FileName>{fileItem.name}</FileName>
-                  <FileSize>{formatFileSize(fileItem.size)}</FileSize>
+                  <FileName>{file.name}</FileName>
+                  <FileSize>{formatFileSize(file.size)}</FileSize>
                 </FileDetails>
               </FileInfo>
-              <RemoveButton onClick={() => removeFile(fileItem.id)}>
-                <X size={16} />
-              </RemoveButton>
+              <FileStatus>
+                <StatusIcon status="success">
+                  <CheckCircle size={16} />
+                </StatusIcon>
+                <RemoveButton onClick={() => removeFile(index)}>
+                  <X size={16} />
+                </RemoveButton>
+              </FileStatus>
             </FileItem>
           ))}
         </FileList>
       )}
 
-      <SupportedFormats>
-        <strong>Supported formats:</strong> PDF, Excel (.xlsx, .xls), CSV
-      </SupportedFormats>
+      {files.length > 0 && (
+        <>
+          <UploadButton
+            onClick={handleUpload}
+            disabled={isUploading}
+          >
+            {isUploading ? (
+              <>
+                <div className="spinner" style={{ width: '20px', height: '20px' }}></div>
+                Processing Files...
+              </>
+            ) : (
+              <>
+                <Upload size={20} />
+                Upload {files.length} File{files.length !== 1 ? 's' : ''}
+              </>
+            )}
+          </UploadButton>
+          
+          {isUploading && (
+            <ProgressBar>
+              <ProgressFill progress={uploadProgress} />
+            </ProgressBar>
+          )}
+        </>
+      )}
     </UploadContainer>
   );
 }

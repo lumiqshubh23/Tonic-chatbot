@@ -10,6 +10,10 @@ import requests
 import openai
 import google.generativeai as genai
 from dotenv import load_dotenv
+import matplotlib.pyplot as plt
+import io
+import base64
+import re
 
 # Load environment variables
 load_dotenv()
@@ -133,7 +137,19 @@ def get_perplexity_response(prompt, conversation_history=None):
 
 def generate_plot_code(knowledge, query, reply):
     """Generate matplotlib code for visualization"""
-    system_prompt = "You are a Python assistant. Output only valid matplotlib code using data given to you. You can generate multiple plots, so generate code in that way. If there is no sufficient Knowledge Base data, rely on the Answer"
+    system_prompt = """You are a Python assistant specialized in data visualization. 
+    Generate ONLY valid matplotlib code that creates meaningful visualizations.
+    
+    IMPORTANT RULES:
+    1. Output ONLY the Python code, no explanations
+    2. Use matplotlib.pyplot as plt
+    3. Use pandas as pd if needed
+    4. Create clear, readable visualizations
+    5. If no data is available, create sample data for demonstration
+    6. Always set proper titles, labels, and legends
+    7. Use appropriate chart types (bar, line, pie, scatter, etc.)
+    8. Make sure the code runs without errors"""
+    
     user_prompt = f"""Knowledge Base:\n{knowledge}\n\nUser Query:\n{query}\n\nAnswer:\n{reply}"""
     
     try:
@@ -149,6 +165,111 @@ def generate_plot_code(knowledge, query, reply):
     except Exception as e:
         logger.error(f"Code generation failed: {e}")
         return None
+
+def execute_plot_code(plot_code):
+    """Execute matplotlib code and return base64 encoded image"""
+    try:
+        # Clear any existing plots
+        plt.clf()
+        
+        # Create execution environment
+        exec_globals = {
+            "plt": plt, 
+            "pd": pd, 
+            "__name__": "__main__",
+            "np": __import__('numpy')
+        }
+        
+        # Remove plt.show() calls as we want to capture the plot
+        plot_code = re.sub(r"plt\.show\(\)", "", plot_code)
+        
+        # Execute the code
+        exec(plot_code, exec_globals)
+        
+        # Get the current figure
+        fig = plt.gcf()
+        
+        # Save to bytes buffer
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
+        buf.seek(0)
+        
+        # Convert to base64
+        img_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+        
+        # Close the figure to free memory
+        plt.close(fig)
+        
+        return img_base64
+        
+    except Exception as e:
+        logger.error(f"Plot execution failed: {e}")
+        return None
+
+def extract_tables_from_response(response_text):
+    """Extract tables from response text"""
+    tables = []
+    
+    # Check for markdown tables
+    if "|" in response_text:
+        try:
+            lines = response_text.split('\n')
+            table_blocks = []
+            current_block = []
+
+            for line in lines:
+                if '|' in line and line.strip():
+                    current_block.append(line.strip())
+                elif current_block:
+                    table_blocks.append(current_block)
+                    current_block = []
+
+            if current_block:
+                table_blocks.append(current_block)
+
+            for block in table_blocks:
+                if len(block) >= 2:
+                    # Remove separator lines (lines with only dashes and pipes)
+                    if re.match(r'\s*\|?\s*-+\s*\|', block[1]):
+                        block.pop(1)
+
+                    headers = [col.strip() for col in block[0].split('|') if col.strip()]
+                    data_rows = []
+                    for row in block[1:]:
+                        cols = [col.strip() for col in row.split('|') if col.strip()]
+                        if len(cols) == len(headers):
+                            data_rows.append(cols)
+
+                    if data_rows:
+                        tables.append({
+                            'headers': headers,
+                            'data': data_rows
+                        })
+
+        except Exception as e:
+            logger.error(f"Markdown table extraction error: {e}")
+
+    # Also try to extract structured data that might not be in markdown format
+    try:
+        # Look for patterns that might indicate tabular data
+        data_patterns = [
+            r'(\w+):\s*(\d+\.?\d*)',  # Key: value patterns
+            r'(\w+)\s+(\d+\.?\d*)',   # Word followed by number
+        ]
+        
+        for pattern in data_patterns:
+            matches = re.findall(pattern, response_text)
+            if len(matches) >= 2:  # At least 2 data points to make a table
+                tables.append({
+                    'headers': ['Category', 'Value'],
+                    'data': matches
+                })
+                break
+                
+    except Exception as e:
+        logger.error(f"Pattern-based table extraction error: {e}")
+
+    return tables
 
 def get_chat_prompt():
     """Get the base chat prompt for the AI assistant"""
@@ -259,49 +380,26 @@ def chat():
         response, sources = get_perplexity_response(full_prompt, conversation_history)
         
         # Extract tables from response
-        tables = []
-        if "|" in response:
-            lines = response.split('\n')
-            table_blocks = []
-            current_block = []
-            
-            for line in lines:
-                if '|' in line and line.strip():
-                    current_block.append(line.strip())
-                elif current_block:
-                    table_blocks.append(current_block)
-                    current_block = []
-            
-            if current_block:
-                table_blocks.append(current_block)
-            
-            for block in table_blocks:
-                if len(block) >= 2:
-                    if block[1].startswith('|') and '-' in block[1]:
-                        block.pop(1)  # Remove separator line
-                    
-                    headers = [col.strip() for col in block[0].split('|') if col.strip()]
-                    data_rows = []
-                    for row in block[1:]:
-                        cols = [col.strip() for col in row.split('|') if col.strip()]
-                        if len(cols) == len(headers):
-                            data_rows.append(cols)
-                    
-                    if data_rows:
-                        tables.append({
-                            'headers': headers,
-                            'data': data_rows
-                        })
+        tables = extract_tables_from_response(response)
         
-        # Generate plot if requested
+        # Generate plot if requested or if data is present
         plot_data = None
-        if any(word in question.lower() for word in ["graph", "plot", "chart", "visual"]):
+        visualization_keywords = ["graph", "plot", "chart", "visual", "visualize", "show me", "display", "create a graph", "make a chart"]
+        data_keywords = ["data", "numbers", "statistics", "percentage", "increase", "decrease", "trend", "comparison"]
+        
+        needs_visualization = any(word in question.lower() for word in visualization_keywords)
+        has_data = any(word in response.lower() for word in data_keywords)
+        
+        if needs_visualization or has_data:
             plot_code = generate_plot_code(knowledge_base, question, response)
             if plot_code:
-                plot_data = {
-                    'code': plot_code,
-                    'type': 'matplotlib'
-                }
+                plot_image = execute_plot_code(plot_code)
+                if plot_image:
+                    plot_data = {
+                        'code': plot_code,
+                        'image': plot_image,
+                        'type': 'matplotlib'
+                    }
         
         return jsonify({
             'success': True,

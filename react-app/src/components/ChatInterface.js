@@ -141,10 +141,57 @@ const LoadingContainer = styled.div`
   }
 `;
 
+const KnowledgeBaseStatus = styled.div`
+  margin: 20px;
+  padding: 16px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+`;
+
+const StatusHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+`;
+
+const StatusTitle = styled.h4`
+  color: #2d3748;
+  margin: 0;
+  font-weight: 600;
+  font-size: 16px;
+`;
+
+const ClearButton = styled.button`
+  padding: 6px 12px;
+  background: #e53e3e;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: #c53030;
+  }
+`;
+
+const StatusText = styled.p`
+  color: #718096;
+  margin: 0;
+  font-size: 14px;
+`;
+
 function ChatInterface({ currentSession, sessions, setSessions }) {
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [knowledgeBase, setKnowledgeBase] = useState('');
+  const [showFileUpload, setShowFileUpload] = useState(false);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -164,7 +211,7 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
     setIsLoading(true);
 
     // Add user message to session
-    const newMessage = {
+    const userMessage = {
       q: question,
       a: '',
       timestamp: new Date().toLocaleString(),
@@ -173,7 +220,7 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
 
     setSessions(prev => ({
       ...prev,
-      [currentSession]: [...prev[currentSession], newMessage]
+      [currentSession]: [...prev[currentSession], userMessage]
     }));
 
     try {
@@ -186,9 +233,9 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
       );
       
       if (response.success) {
-        // Add AI response to session
+        // Add AI response as a separate message
         const aiMessage = {
-          q: question,
+          q: '',
           a: response.response,
           timestamp: response.timestamp,
           type: 'ai',
@@ -198,9 +245,7 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
 
         setSessions(prev => ({
           ...prev,
-          [currentSession]: prev[currentSession].map((msg, index) => 
-            index === prev[currentSession].length - 1 ? aiMessage : msg
-          )
+          [currentSession]: [...prev[currentSession], aiMessage]
         }));
 
       } else {
@@ -216,34 +261,80 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
   };
 
   const handleFileUpload = async (files) => {
+    setIsUploading(true);
     try {
       const response = await fileAPI.upload(files);
       if (response.success) {
         setKnowledgeBase(response.knowledge_base);
         toast.success(response.message);
+        setShowFileUpload(false);
       } else {
         toast.error('Failed to process files');
       }
     } catch (error) {
       console.error('File upload error:', error);
       toast.error('Failed to upload files. Please try again.');
+    } finally {
+      setIsUploading(false);
     }
+  };
+
+  const clearKnowledgeBase = () => {
+    setKnowledgeBase('');
+    toast.success('Knowledge base cleared');
   };
 
   const currentSessionMessages = sessions[currentSession] || [];
 
   return (
     <ChatContainer>
-      {/* <FileUploadSection>
-        <FileUpload onFileUpload={handleFileUpload} />
-      </FileUploadSection> */}
+      {showFileUpload && (
+        <FileUploadSection>
+          <FileUpload onFileUpload={handleFileUpload} isUploading={isUploading} />
+        </FileUploadSection>
+      )}
+
+      {knowledgeBase && (
+        <KnowledgeBaseStatus>
+          <StatusHeader>
+            <StatusTitle>📚 Knowledge Base Active</StatusTitle>
+            <ClearButton onClick={clearKnowledgeBase}>
+              Clear
+            </ClearButton>
+          </StatusHeader>
+          <StatusText>
+            Knowledge base contains {knowledgeBase.length} characters
+          </StatusText>
+        </KnowledgeBaseStatus>
+      )}
 
       <ChatSection>
         <MessagesContainer>
           {currentSessionMessages.length === 0 ? (
             <EmptyState>
               <h3>Welcome to TONIC AI! 🤖</h3>
-              <p>Start a conversation by asking a question or upload some documents to get started.</p>
+              <p>
+                {knowledgeBase 
+                  ? "Start a conversation by asking a question about your uploaded documents."
+                  : "Upload some documents to build your knowledge base, then start asking questions!"
+                }
+              </p>
+              {!knowledgeBase && (
+                <button 
+                  onClick={() => setShowFileUpload(!showFileUpload)}
+                  style={{
+                    padding: '12px 24px',
+                    background: 'linear-gradient(135deg, #FF6B35 0%, #e53e3e 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: '600'
+                  }}
+                >
+                  {showFileUpload ? 'Hide File Upload' : 'Upload Documents'}
+                </button>
+              )}
             </EmptyState>
           ) : (
             currentSessionMessages.map((message, index) => (
@@ -266,7 +357,11 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
             <TextArea
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
-              placeholder="Ask me anything about your uploaded documents or any general question..."
+              placeholder={
+                knowledgeBase 
+                  ? "Ask me anything about your uploaded documents or any general question..."
+                  : "Upload documents first to ask questions about them..."
+              }
               disabled={isLoading}
             />
             <SendButton type="submit" disabled={isLoading || !userInput.trim()}>

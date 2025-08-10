@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
-import { User, Bot, Clock, Download } from 'lucide-react';
+import { User, Bot, Clock, Download, BarChart3, Table as TableIcon } from 'lucide-react';
 import styled from 'styled-components';
 
 const MessageContainer = styled.div`
@@ -8,6 +8,7 @@ const MessageContainer = styled.div`
   justify-content: ${props => props.isUser ? 'flex-end' : 'flex-start'};
   margin-bottom: 20px;
   padding: 0 20px;
+  width: 100%;
 `;
 
 const MessageWrapper = styled.div`
@@ -181,48 +182,72 @@ const MessageText = styled.div`
   }
 `;
 
+const VisualizationSection = styled.div`
+  margin-top: 20px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 16px;
+`;
+
+const SectionTitle = styled.h4`
+  color: #2d3748;
+  margin: 0 0 12px 0;
+  font-weight: 600;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
 const TableContainer = styled.div`
   margin: 16px 0;
   overflow-x: auto;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   background: white;
   border: 1px solid #e2e8f0;
 `;
 
 const TableHeader = styled.div`
-  padding: 12px 16px;
-  background: #f8f9fa;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #edf2f7 100%);
   border-bottom: 1px solid #e2e8f0;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-radius: 12px 12px 0 0;
 `;
 
-const TableTitle = styled.h4`
+const TableTitle = styled.h5`
   color: #2d3748;
   margin: 0;
   font-weight: 600;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 `;
 
 const DownloadButton = styled.button`
-  padding: 6px 12px;
-  background: #FF6B35;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #FF6B35 0%, #e53e3e 100%);
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 0.8rem;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   font-weight: 500;
   transition: all 0.2s ease;
   
   &:hover {
-    background: #e53e3e;
     transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+  }
+  
+  &:active {
+    transform: translateY(0);
   }
 `;
 
@@ -235,40 +260,49 @@ const Table = styled.table`
 
 const Th = styled.th`
   border: 1px solid #e2e8f0;
-  padding: 12px;
+  padding: 12px 16px;
   text-align: left;
   background: #f8f9fa;
   font-weight: 600;
   color: #4a5568;
+  font-size: 13px;
 `;
 
 const Td = styled.td`
   border: 1px solid #e2e8f0;
-  padding: 12px;
+  padding: 12px 16px;
   color: #4a5568;
+  font-size: 13px;
 `;
 
 const PlotContainer = styled.div`
-  background: #f8f9fa;
-  padding: 20px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #edf2f7 100%);
+  padding: 24px;
   border-radius: 12px;
   margin-top: 16px;
   text-align: center;
   border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 `;
 
-const PlotTitle = styled.p`
-  margin: 0 0 12px 0;
-  color: #4a5568;
-  font-weight: 500;
+const PlotTitle = styled.h5`
+  margin: 0 0 16px 0;
+  color: #2d3748;
+  font-weight: 600;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 `;
 
 const PlotImage = styled.img`
   max-width: 100%;
   height: auto;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  margin-bottom: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  margin-bottom: 16px;
+  border: 1px solid #e2e8f0;
 `;
 
 const EmptyPlot = styled.div`
@@ -282,6 +316,42 @@ const EmptyPlot = styled.div`
   justify-content: center;
   color: #718096;
   font-style: italic;
+  margin-bottom: 16px;
+`;
+
+const PlotDownloadButton = styled.button`
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #FF6B35 0%, #e53e3e 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  margin: 0 auto;
+  
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+  }
+  
+  &:active {
+    transform: translateY(0);
+  }
+`;
+
+const NoDataMessage = styled.div`
+  text-align: center;
+  padding: 20px;
+  color: #718096;
+  font-style: italic;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px dashed #e2e8f0;
 `;
 
 function ChatMessage({ message }) {
@@ -299,6 +369,13 @@ function ChatMessage({ message }) {
     a.download = `table_${index + 1}_${Date.now()}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
+  };
+  
+  const downloadPlotAsPNG = (plotImage) => {
+    const link = document.createElement('a');
+    link.href = `data:image/png;base64,${plotImage}`;
+    link.download = `plot_${Date.now()}.png`;
+    link.click();
   };
   
   return (
@@ -326,53 +403,89 @@ function ChatMessage({ message }) {
               <>
                 <ReactMarkdown>{message.a}</ReactMarkdown>
                 
-                {message.tables && message.tables.length > 0 && (
-                  message.tables.map((table, index) => (
-                    <TableContainer key={index}>
-                      <TableHeader>
-                        <TableTitle>📊 Table {index + 1}</TableTitle>
-                        <DownloadButton onClick={() => downloadTableAsCSV(table, index)}>
-                          <Download size={14} />
-                          Download CSV
-                        </DownloadButton>
-                      </TableHeader>
-                      <Table>
-                        <thead>
-                          <tr>
-                            {table.headers.map((header, i) => (
-                              <Th key={i}>{header}</Th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {table.data.map((row, i) => (
-                            <tr key={i}>
-                              {row.map((cell, j) => (
-                                <Td key={j}>{cell}</Td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </Table>
-                    </TableContainer>
-                  ))
-                )}
-                
-                {message.plot && (
-                  <PlotContainer>
-                    <PlotTitle>📊 Generated Visualization</PlotTitle>
-                    {message.plot.image ? (
-                      <PlotImage 
-                        src={`data:image/png;base64,${message.plot.image}`} 
-                        alt="Generated Plot"
-                      />
-                    ) : (
-                      <EmptyPlot>
-                        Chart visualization would be displayed here
-                      </EmptyPlot>
+                {/* Show visualizations if available */}
+                {(message.tables && message.tables.length > 0) || message.plot ? (
+                  <VisualizationSection>
+                    {/* Tables Section */}
+                    {message.tables && message.tables.length > 0 && (
+                      <>
+                        <SectionTitle>
+                          <TableIcon size={18} />
+                          Extracted Tables ({message.tables.length})
+                        </SectionTitle>
+                        {message.tables.map((table, index) => (
+                          <TableContainer key={index}>
+                            <TableHeader>
+                              <TableTitle>
+                                <TableIcon size={16} />
+                                Table {index + 1}
+                              </TableTitle>
+                              <DownloadButton onClick={() => downloadTableAsCSV(table, index)}>
+                                <Download size={14} />
+                                Download CSV
+                              </DownloadButton>
+                            </TableHeader>
+                            <Table>
+                              <thead>
+                                <tr>
+                                  {table.headers.map((header, i) => (
+                                    <Th key={i}>{header}</Th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {table.data.map((row, i) => (
+                                  <tr key={i}>
+                                    {row.map((cell, j) => (
+                                      <Td key={j}>{cell}</Td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </Table>
+                          </TableContainer>
+                        ))}
+                      </>
                     )}
-                  </PlotContainer>
-                )}
+                    
+                    {/* Plot Section */}
+                    {message.plot && (
+                      <>
+                        <SectionTitle>
+                          <BarChart3 size={18} />
+                          Generated Visualization
+                        </SectionTitle>
+                        <PlotContainer>
+                          <PlotTitle>
+                            <BarChart3 size={16} />
+                            Data Visualization
+                          </PlotTitle>
+                          {message.plot.image ? (
+                            <>
+                              <PlotImage 
+                                src={`data:image/png;base64,${message.plot.image}`} 
+                                alt="Generated Plot"
+                              />
+                              <PlotDownloadButton onClick={() => downloadPlotAsPNG(message.plot.image)}>
+                                <Download size={16} />
+                                Download Plot as PNG
+                              </PlotDownloadButton>
+                            </>
+                          ) : (
+                            <>
+                              <EmptyPlot>
+                                Chart visualization would be displayed here
+                              </EmptyPlot>
+                              <NoDataMessage>
+                                Plot code was generated but image could not be rendered
+                              </NoDataMessage>
+                            </>
+                          )}
+                        </PlotContainer>
+                      </>
+                    )}
+                  </VisualizationSection>
+                ) : null}
               </>
             )}
           </MessageText>
