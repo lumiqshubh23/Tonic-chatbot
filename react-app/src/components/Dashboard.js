@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import Sidebar from './Sidebar';
+import React, { useState, useRef } from 'react';
+import ChatHistorySidebar from './ChatHistorySidebar';
 import ChatInterface from './ChatInterface';
+import LogoutModal from './LogoutModal';
 import styled from 'styled-components';
 
 const DashboardContainer = styled.div`
@@ -58,39 +59,89 @@ const SidebarContainer = styled.div`
   left: 0;
   width: 300px;
   height: 100vh;
-  background: white;
   z-index: 1000;
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3);
 `;
 
 function Dashboard() {
-  const [currentSession, setCurrentSession] = useState('Default');
-  const [sessions, setSessions] = useState({
-    'Default': []
-  });
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [currentSessionData, setCurrentSessionData] = useState(null);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const sidebarRef = useRef(null);
+
+  const handleSessionSelect = (sessionData) => {
+    console.log('Session selected in Dashboard:', sessionData);
+    
+    // Handle special new chat mode flag
+    if (sessionData && sessionData.isNewChatMode) {
+      setCurrentSessionData({ 
+        isNewChatMode: true, 
+        shouldCreateSessionOnFirstMessage: true 
+      });
+      setCurrentSessionId(null);
+      return;
+    }
+    
+    setCurrentSessionData(sessionData);
+    setCurrentSessionId(sessionData?.session_id || null);
+  };
+
+  const handleSessionRenamed = (sessionId, newName) => {
+    // Update the current session data if it's the active session
+    if (currentSessionId === sessionId) {
+      setCurrentSessionData(prev => ({
+        ...prev,
+        session_name: newName
+      }));
+    }
+    
+    // Refresh the sidebar to show the updated session name
+    if (sidebarRef.current && sidebarRef.current.loadChatHistory) {
+      sidebarRef.current.loadChatHistory();
+    }
+  };
+
+  const handleLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const handleConfirmLogout = () => {
+    // This will be handled by the AuthContext
+    window.location.href = '/login';
+  };
 
   return (
     <DashboardContainer>
       <SidebarContainer>
-        <Sidebar 
-          currentSession={currentSession}
-          setCurrentSession={setCurrentSession}
-          sessions={sessions}
-          setSessions={setSessions}
+        <ChatHistorySidebar 
+          ref={sidebarRef}
+          currentSessionId={currentSessionId}
+          setCurrentSessionId={setCurrentSessionId}
+          onSessionSelect={handleSessionSelect}
+          onSessionRenamed={handleSessionRenamed}
+          currentSessionData={currentSessionData}
         />
       </SidebarContainer>
       
       <ContentArea>
         <Header>
-          {/* <Logo>TONIC</Logo> */}
           <Title>TONIC AI Chatbot</Title>
         </Header>
         <ChatInterface 
-          currentSession={currentSession}
-          sessions={sessions}
-          setSessions={setSessions}
+          currentSessionId={currentSessionId}
+          currentSessionData={currentSessionData}
+          onSessionChange={handleSessionSelect}
+          onSessionRenamed={handleSessionRenamed}
         />
       </ContentArea>
+
+      <LogoutModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={handleConfirmLogout}
+        user="User"
+        currentSessionData={currentSessionData}
+      />
     </DashboardContainer>
   );
 }

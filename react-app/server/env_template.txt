@@ -1,0 +1,10 @@
+# Database Configuration
+DATABASE_URL=postgresql://admin:password@localhost:5432/my_new_db
+
+# JWT Configuration
+JWT_SECRET_KEY=your-secret-key-change-this-in-production
+
+# API Keys
+PERPLEXITY_API_KEY=your-perplexity-api-key
+GEMINI_API_KEY=your-gemini-api-key
+OPENAI_API_KEY=your-openai-api-key

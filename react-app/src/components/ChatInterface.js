@@ -4,7 +4,7 @@ import ChatMessage from './ChatMessage';
 import { Send, Paperclip, X } from 'lucide-react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
-import { fileAPI, chatAPI } from '../services/api';
+import { fileAPI, chatAPI, chatHistoryAPI } from '../services/api';
 
 const ChatContainer = styled.div`
   display: flex;
@@ -13,14 +13,7 @@ const ChatContainer = styled.div`
   background: #f7fafc;
 `;
 
-const FileUploadSection = styled.div`
-  margin: 20px;
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e2e8f0;
-`;
+// FileUploadSection component removed as it's no longer used
 
 const ChatSection = styled.div`
   flex: 1;
@@ -287,18 +280,111 @@ const StatusText = styled.p`
   font-size: 14px;
 `;
 
-function ChatInterface({ currentSession, sessions, setSessions }) {
+function ChatInterface({ currentSessionId, currentSessionData, onSessionChange, onSessionRenamed }) {
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [knowledgeBase, setKnowledgeBase] = useState('');
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [showUploadInterface, setShowUploadInterface] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [isCreatingNewSession, setIsCreatingNewSession] = useState(false);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
+  // Function to generate unique session name based on conversation content (like ChatGPT)
+  const generateSessionName = (question, answer) => {
+    // Clean and process the question
+    const cleanQuestion = question.toLowerCase()
+      .replace(/[^\w\s]/g, '') // Remove punctuation
+      .trim();
+    
+    if (!cleanQuestion) {
+      return 'New Chat';
+    }
+    
+    // Split into words and filter meaningful ones
+    const words = cleanQuestion.split(/\s+/)
+      .filter(word => word.length > 2) // Filter out very short words
+      .filter(word => !['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'can', 'may', 'might', 'must', 'shall'].includes(word)); // Filter common words
+    
+    if (words.length === 0) {
+      return 'New Chat';
+    }
+    
+    // Take first 4 meaningful words for better uniqueness
+    const meaningfulWords = words.slice(0, 4);
+    
+    // Create a title with proper capitalization
+    const title = meaningfulWords
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+    
+    // Add timestamp for uniqueness if title is too short
+    if (title.length < 10) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false 
+      });
+      return `${title} (${timeStr})`;
+    }
+    
+    // Limit to reasonable length
+    return title.length > 35 ? title.substring(0, 35) + '...' : title;
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const loadSessionMessages = async () => {
+    if (!currentSessionId) return;
+    
+    try {
+      console.log('Loading messages for session:', currentSessionId);
+      setLoadingMessages(true);
+      const response = await chatHistoryAPI.getSessionHistory(currentSessionId);
+      console.log('Session history response:', response);
+      
+      if (response.success) {
+        // Convert database messages to the format expected by ChatMessage component
+        // We need to create separate messages for user questions and AI answers
+        const formattedMessages = [];
+        
+        response.session.messages.forEach(msg => {
+          // Format timestamp for display
+          const timestamp = new Date(msg.timestamp).toLocaleString();
+          
+          // Add user question message
+          formattedMessages.push({
+            q: msg.question,
+            a: '',
+            timestamp: timestamp,
+            type: 'user'
+          });
+          
+          // Add AI answer message
+          formattedMessages.push({
+            q: '',
+            a: msg.answer,
+            timestamp: timestamp,
+            type: 'ai'
+          });
+        });
+        
+        setMessages(formattedMessages);
+      } else {
+        toast.error('Failed to load session messages');
+      }
+    } catch (error) {
+      console.error('Load session messages error:', error);
+      toast.error('Failed to load session messages');
+    } finally {
+      setLoadingMessages(false);
+    }
   };
 
   // Auto-resize textarea function
@@ -311,14 +397,93 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
     }
   };
 
+  // Load messages when session changes
+  useEffect(() => {
+    console.log('Session change detected:', {
+      currentSessionId,
+      isCreatingNewSession,
+      messagesLength: messages.length
+    });
+    
+    if (currentSessionId && !isCreatingNewSession) {
+      console.log('Loading messages for session:', currentSessionId);
+      loadSessionMessages();
+    } else if (!currentSessionId) {
+      console.log('Clearing messages - no session');
+      setMessages([]);
+    } else if (isCreatingNewSession) {
+      console.log('Skipping message load - creating new session');
+    }
+  }, [currentSessionId, isCreatingNewSession]);
+
+  // Clear messages when starting a new chat (session changes from existing to new)
+  useEffect(() => {
+    if (currentSessionId && messages.length > 0) {
+      // Check if this is a new session (message count is 0)
+      if (currentSessionData?.message_count === 0) {
+        console.log('New session detected, clearing messages');
+        setMessages([]);
+      }
+    } else if (!currentSessionId && messages.length > 0) {
+      // Clear messages when no session is selected (new chat without existing sessions)
+      console.log('No session selected, clearing messages for new chat');
+      setMessages([]);
+    }
+    
+    // Clear messages when entering new chat mode
+    if (currentSessionData?.isNewChatMode && messages.length > 0) {
+      console.log('New chat mode detected, clearing messages');
+      setMessages([]);
+    }
+  }, [currentSessionId, currentSessionData?.message_count, currentSessionData?.isNewChatMode]);
+
   useEffect(() => {
     scrollToBottom();
-  }, [sessions[currentSession]]);
+  }, [messages]);
 
   // Adjust textarea height when userInput changes
   useEffect(() => {
     adjustTextareaHeight();
   }, [userInput]);
+
+  // Monitor for Chrome extension interference
+  useEffect(() => {
+    const originalFetch = window.fetch;
+    const originalXHROpen = XMLHttpRequest.prototype.open;
+    
+    // Monitor fetch requests
+    window.fetch = function(...args) {
+      const url = args[0];
+      if (typeof url === 'string' && url.includes('chrome-extension://')) {
+        console.warn('Chrome extension request detected:', {
+          url,
+          method: args[1]?.method || 'GET',
+          timestamp: new Date().toISOString(),
+          stack: new Error().stack
+        });
+      }
+      return originalFetch.apply(this, args);
+    };
+    
+    // Monitor XMLHttpRequest
+    XMLHttpRequest.prototype.open = function(method, url, ...args) {
+      if (typeof url === 'string' && url.includes('chrome-extension://')) {
+        console.warn('Chrome extension XMLHttpRequest detected:', {
+          url,
+          method,
+          timestamp: new Date().toISOString(),
+          stack: new Error().stack
+        });
+      }
+      return originalXHROpen.apply(this, [method, url, ...args]);
+    };
+    
+    // Cleanup function
+    return () => {
+      window.fetch = originalFetch;
+      XMLHttpRequest.prototype.open = originalXHROpen;
+    };
+  }, []);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -327,15 +492,125 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
     }
   };
 
+  // Add handlers to detect and potentially mitigate Chrome extension interference
+  const handleFocus = (e) => {
+    // Log focus events to help debug extension issues
+    console.log('TextArea focused', {
+      target: e.target,
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent
+    });
+  };
+
+  const handleBlur = (e) => {
+    // Log blur events to help debug extension issues
+    console.log('TextArea blurred', {
+      target: e.target,
+      timestamp: new Date().toISOString()
+    });
+  };
+
+  const handleInput = (e) => {
+    // Prevent potential extension interference by ensuring proper event handling
+    setUserInput(e.target.value);
+    adjustTextareaHeight();
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!userInput.trim() || isLoading) return;
+
+    // If no current session, create a default one
+    let sessionId = currentSessionId;
+    let sessionName = currentSessionData?.session_name || 'Default';
+    
+    // Check if we're in new chat mode (no existing chats)
+    const isNewChatMode = currentSessionData?.isNewChatMode && currentSessionData?.shouldCreateSessionOnFirstMessage;
+    
+    if (!sessionId && !isNewChatMode) {
+      try {
+        console.log('No active session, creating unique session...');
+        setIsCreatingNewSession(true);
+        
+        // Generate unique session name based on the first message
+        const question = userInput.trim();
+        const uniqueSessionName = generateSessionName(question, '');
+        console.log('Generated unique session name:', uniqueSessionName);
+        
+        const createResponse = await chatHistoryAPI.createChatSession(uniqueSessionName);
+        if (createResponse.success) {
+          sessionId = createResponse.session.id;
+          sessionName = createResponse.session.session_name;
+          console.log('Unique session created:', sessionId, 'with name:', sessionName);
+          
+          // Update the parent component with the new session
+          if (onSessionChange) {
+            onSessionChange({
+              session_id: sessionId,
+              session_name: sessionName,
+              created_at: createResponse.session.created_at,
+              message_count: 0
+            });
+          }
+        } else {
+          console.error('Failed to create unique session:', createResponse.message);
+          toast.error(`Failed to create chat session: ${createResponse.message}`);
+          setIsCreatingNewSession(false);
+          return;
+        }
+      } catch (error) {
+        console.error('Error creating unique session:', error);
+        toast.error(`Failed to create chat session: ${error.message || 'Unknown error'}`);
+        setIsCreatingNewSession(false);
+        return;
+      }
+    }
+    
+    // If in new chat mode, create session now (first message)
+    if (isNewChatMode) {
+      try {
+        console.log('New chat mode: creating session on first message...');
+        setIsCreatingNewSession(true);
+        
+        // Generate unique session name based on the first message
+        const question = userInput.trim();
+        const uniqueSessionName = generateSessionName(question, '');
+        console.log('Generated unique session name:', uniqueSessionName);
+        
+        const createResponse = await chatHistoryAPI.createChatSession(uniqueSessionName);
+        if (createResponse.success) {
+          sessionId = createResponse.session.id;
+          sessionName = createResponse.session.session_name;
+          console.log('Session created on first message:', sessionId, 'with name:', sessionName);
+          
+          // Update the parent component with the new session
+          if (onSessionChange) {
+            onSessionChange({
+              session_id: sessionId,
+              session_name: sessionName,
+              created_at: createResponse.session.created_at,
+              message_count: 0
+            });
+          }
+        } else {
+          console.error('Failed to create session on first message:', createResponse.message);
+          toast.error(`Failed to create chat session: ${createResponse.message}`);
+          setIsCreatingNewSession(false);
+          return;
+        }
+      } catch (error) {
+        console.error('Error creating session on first message:', error);
+        toast.error(`Failed to create chat session: ${error.message || 'Unknown error'}`);
+        setIsCreatingNewSession(false);
+        return;
+      }
+    }
 
     const question = userInput.trim();
     setUserInput('');
     setIsLoading(true);
 
-    // Add user message to session
+    // Add user message to local state
     const userMessage = {
       q: question,
       a: '',
@@ -343,25 +618,22 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
       type: 'user'
     };
 
-    setSessions(prev => ({
-      ...prev,
-      [currentSession]: [...prev[currentSession], userMessage]
-    }));
+    setMessages(prev => [...prev, userMessage]);
 
     try {
       console.log('Sending message to API:', {
         question,
         knowledgeBase: knowledgeBase ? 'Present' : 'Empty',
-        sessionMessages: sessions[currentSession]?.length || 0,
-        currentSession
+        sessionId: currentSessionId,
+        currentSessionName: currentSessionData?.session_name
       });
       
       // Get AI response from backend
       const response = await chatAPI.sendMessage(
         question, 
         knowledgeBase, 
-        sessions[currentSession], 
-        currentSession
+        messages, 
+        sessionName
       );
       
       if (response.success) {
@@ -403,10 +675,9 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
           });
         }
 
-        setSessions(prev => ({
-          ...prev,
-          [currentSession]: [...prev[currentSession], aiMessage]
-        }));
+        setMessages(prev => [...prev, aiMessage]);
+
+        // Session already has unique name, no need to rename
 
       } else {
         toast.error('Failed to get response from AI');
@@ -417,6 +688,7 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
       console.error('Error:', error);
     } finally {
       setIsLoading(false);
+      setIsCreatingNewSession(false);
     }
   };
 
@@ -444,7 +716,7 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
     toast.success('Knowledge base cleared');
   };
 
-  const currentSessionMessages = sessions[currentSession] || [];
+  // This line is no longer needed as we're using the messages state directly
 
   return (
     <ChatContainer>
@@ -464,34 +736,23 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
 
       <ChatSection>
         <MessagesContainer>
-          {currentSessionMessages.length === 0 ? (
+          {loadingMessages ? (
             <EmptyState>
-              <h3>Welcome to TONIC AI! 🤖</h3>
+              <div className="spinner" style={{ width: '32px', height: '32px', margin: '0 auto 16px' }}></div>
+              <p>Loading messages...</p>
+            </EmptyState>
+          ) : messages.length === 0 ? (
+            <EmptyState>
+              <h3>How can I help you today? 🤖</h3>
               <p>
                 {knowledgeBase 
-                  ? "Start a conversation by asking a question about your uploaded documents."
-                  : "Upload some documents to build your knowledge base, then start asking questions!"
+                  ? "I have access to your uploaded documents. Ask me anything!"
+                  : "I'm here to help! Ask me anything or upload documents to get started."
                 }
               </p>
-              {/* {!knowledgeBase && (
-                <button 
-                  onClick={() => setShowFileUpload(!showFileUpload)}
-                  style={{
-                    padding: '12px 24px',
-                    background: 'linear-gradient(135deg, #FF6B35 0%, #e53e3e 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontWeight: '600'
-                  }}
-                >
-                  {showFileUpload ? 'Hide File Upload' : 'Upload Documents'}
-                </button>
-              )} */}
             </EmptyState>
           ) : (
-            currentSessionMessages.map((message, index) => (
+            messages.map((message, index) => (
               <ChatMessage key={index} message={message} />
             ))
           )}
@@ -533,15 +794,22 @@ function ChatInterface({ currentSession, sessions, setSessions }) {
               <TextArea
                 ref={textareaRef}
                 value={userInput}
-                onChange={(e) => setUserInput(e.target.value)}
-                onInput={adjustTextareaHeight}
+                onChange={handleInput}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
                 onKeyDown={handleKeyDown}
                 placeholder={
                   knowledgeBase 
-                    ? "Ask me anything about your uploaded documents or any general question..."
-                    : "Upload documents first to ask questions about them..."
+                    ? "Message TONIC AI..."
+                    : "Message TONIC AI..."
                 }
                 disabled={isLoading}
+                // Add attributes to help prevent extension interference
+                autoComplete="off"
+                spellCheck="false"
+                data-gramm="false"
+                data-gramm_editor="false"
+                data-enable-grammarly="false"
               />
               <SendButton type="submit" disabled={isLoading || !userInput.trim()}>
                 {isLoading ? (

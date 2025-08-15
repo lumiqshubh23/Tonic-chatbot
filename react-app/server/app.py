@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, send_file, make_response
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_sqlalchemy import SQLAlchemy
 import fitz  # PyMuPDF
 import pandas as pd
 import openai
@@ -24,6 +25,20 @@ import json
 load_dotenv()
 
 app = Flask(__name__)
+
+# Database Configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
+    'DATABASE_URL', 
+    'postgresql://admin:password@localhost:5432/my_new_db'
+)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+}
+
+# Initialize SQLAlchemy
+db = SQLAlchemy(app)
 
 # JWT Configuration
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-secret-key')
@@ -87,13 +102,94 @@ except Exception as e:
 # User credentials (in production, use a database)
 USERS = {
     "admin@123": "admin123",
-    "demo": "demo123"
+    "demo@456": "demo123",
+    "rahul@123":"rahultest",
+    "shubham@123":"shubhamtest"
 }
+
+# Database Models
+class User(db.Model):
+    __tablename__ = 'users'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(120), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<User {self.username}>'
+
+class ChatSession(db.Model):
+    __tablename__ = 'chat_sessions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    session_name = db.Column(db.String(100), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    
+    # Relationship
+    messages = db.relationship('ChatMessage', backref='session', lazy=True, cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<ChatSession {self.session_name}>'
+
+class ChatMessage(db.Model):
+    __tablename__ = 'chat_messages'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('chat_sessions.id'), nullable=False)
+    question = db.Column(db.Text, nullable=False)
+    answer = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<ChatMessage {self.id}>'
+
+class KnowledgeBase(db.Model):
+    __tablename__ = 'knowledge_bases'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<KnowledgeBase {self.id}>'
 
 # In-memory storage (in production, use a database)
 sessions = {}
 knowledge_bases = {}
 user_sessions = {}
+
+def ensure_user_exists_for_history(username):
+    """
+    Ensure a user exists in the database for chat history purposes.
+    This function creates a user record if it doesn't exist, without affecting login authentication.
+    """
+    try:
+        # Check if user already exists in database
+        user = User.query.filter_by(username=username).first()
+        if user:
+            return user
+        
+        # User doesn't exist in database, create them for chat history
+        # Note: We don't set a password_hash since this is only for chat history
+        # The actual authentication still uses the USERS dictionary
+        new_user = User(
+            username=username,
+            password_hash='chat_history_only'  # Placeholder, not used for auth
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        
+        logger.info(f"Created user '{username}' in database for chat history")
+        return new_user
+        
+    except Exception as e:
+        logger.error(f"Error ensuring user exists for history: {e}")
+        db.session.rollback()
+        return None
 
 def process_pdf(file):
     """Extract text from PDF file"""
@@ -408,7 +504,19 @@ def extract_tables_from_response(response_text):
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "healthy", "message": "TONIC AI Backend is running"})
+    try:
+        # Test database connection
+        from sqlalchemy import text
+        db.session.execute(text('SELECT 1'))
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    
+    return jsonify({
+        "status": "healthy", 
+        "message": "TONIC AI Backend is running",
+        "database": db_status
+    })
 
 
 
@@ -673,13 +781,42 @@ def chat():
                 if attempt == 2:  # Last attempt
                     break
     
-    # Store in session
+    # Store in session (in-memory)
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     user_sessions[username][session_name].append({
         "q": question,
         "a": ai_response,
         "timestamp": timestamp
     })
+    
+    # Store in database
+    try:
+        # Ensure user exists in database for chat history
+        user = ensure_user_exists_for_history(username)
+        if user:
+            # Get or create session in database
+            db_session = ChatSession.query.filter_by(user_id=user.id, session_name=session_name).first()
+            if not db_session:
+                db_session = ChatSession(
+                    user_id=user.id,
+                    session_name=session_name
+                )
+                db.session.add(db_session)
+                db.session.flush()  # Get the ID
+            
+            # Save message to database
+            chat_message = ChatMessage(
+                session_id=db_session.id,
+                question=question,
+                answer=ai_response
+            )
+            db.session.add(chat_message)
+            db.session.commit()
+            logger.info(f"Message saved to database for user {username}, session {session_name}")
+    except Exception as e:
+        logger.error(f"Failed to save message to database: {e}")
+        db.session.rollback()
+        # Continue with the response even if database save fails
     
     # Log response data
     logger.info(f"📤 Sending response to client:")
@@ -777,5 +914,448 @@ def get_session_messages(session_name):
     
     return jsonify({"success": False, "message": "Session not found"}), 404
 
+# ==================== CHAT HISTORY APIs ====================
+
+@app.route('/api/chat-history', methods=['GET'])
+@jwt_required()
+def get_chat_history():
+    """Get all chat history for the authenticated user"""
+    username = get_jwt_identity()
+    
+    try:
+        # Ensure user exists in database for chat history
+        user = ensure_user_exists_for_history(username)
+        if not user:
+            return jsonify({"success": False, "message": "Failed to create user for chat history"}), 500
+        
+        # Get all chat sessions for the user
+        chat_sessions = ChatSession.query.filter_by(user_id=user.id).order_by(ChatSession.created_at.desc()).all()
+        
+        history = []
+        for session in chat_sessions:
+            # Get messages for this session
+            messages = ChatMessage.query.filter_by(session_id=session.id).order_by(ChatMessage.timestamp).all()
+            
+            session_data = {
+                "session_id": session.id,
+                "session_name": session.session_name,
+                "created_at": session.created_at.isoformat(),
+                "message_count": len(messages),
+                "messages": [
+                    {
+                        "id": msg.id,
+                        "question": msg.question,
+                        "answer": msg.answer,
+                        "timestamp": msg.timestamp.isoformat()
+                    } for msg in messages
+                ]
+            }
+            history.append(session_data)
+        
+        return jsonify({
+            "success": True,
+            "chat_history": history,
+            "total_sessions": len(history)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching chat history: {e}")
+        return jsonify({"success": False, "message": "Failed to fetch chat history"}), 500
+
+@app.route('/api/chat-history/<int:session_id>', methods=['GET'])
+@jwt_required()
+def get_chat_session_history(session_id):
+    """Get chat history for a specific session"""
+    username = get_jwt_identity()
+    
+    try:
+        # Ensure user exists in database for chat history
+        user = ensure_user_exists_for_history(username)
+        if not user:
+            return jsonify({"success": False, "message": "Failed to create user for chat history"}), 500
+        
+        # Get the specific chat session
+        chat_session = ChatSession.query.filter_by(id=session_id, user_id=user.id).first()
+        if not chat_session:
+            return jsonify({"success": False, "message": "Session not found"}), 404
+        
+        # Get messages for this session
+        messages = ChatMessage.query.filter_by(session_id=session_id).order_by(ChatMessage.timestamp).all()
+        
+        session_data = {
+            "session_id": chat_session.id,
+            "session_name": chat_session.session_name,
+            "created_at": chat_session.created_at.isoformat(),
+            "message_count": len(messages),
+            "messages": [
+                {
+                    "id": msg.id,
+                    "question": msg.question,
+                    "answer": msg.answer,
+                    "timestamp": msg.timestamp.isoformat()
+                } for msg in messages
+            ]
+        }
+        
+        return jsonify({
+            "success": True,
+            "session": session_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching session history: {e}")
+        return jsonify({"success": False, "message": "Failed to fetch session history"}), 500
+
+@app.route('/api/chat-history', methods=['POST'])
+@jwt_required()
+def create_chat_session():
+    """Create a new chat session"""
+    username = get_jwt_identity()
+    data = request.get_json()
+    
+    logger.info(f"Creating chat session for user: {username}")
+    logger.info(f"Request data: {data}")
+    
+    session_name = data.get('session_name', 'New Session')
+    logger.info(f"Session name: {session_name}")
+    
+    try:
+        # Ensure user exists in database for chat history
+        user = ensure_user_exists_for_history(username)
+        if not user:
+            return jsonify({"success": False, "message": "Failed to create user for chat history"}), 500
+        
+        # Check if session name already exists for this user
+        # For "Default" sessions, we allow multiple sessions with the same name
+        if session_name != "Default":
+            existing_session = ChatSession.query.filter_by(user_id=user.id, session_name=session_name).first()
+            if existing_session:
+                return jsonify({"success": False, "message": "Session name already exists"}), 400
+        
+        # Create new session
+        new_session = ChatSession(
+            user_id=user.id,
+            session_name=session_name
+        )
+        
+        db.session.add(new_session)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Chat session created successfully",
+            "session": {
+                "id": new_session.id,
+                "session_name": new_session.session_name,
+                "created_at": new_session.created_at.isoformat()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating chat session: {e}")
+        db.session.rollback()
+        return jsonify({"success": False, "message": "Failed to create chat session"}), 500
+
+@app.route('/api/chat-history/<int:session_id>', methods=['PUT'])
+@jwt_required()
+def update_chat_session(session_id):
+    """Update chat session name"""
+    username = get_jwt_identity()
+    data = request.get_json()
+    
+    new_session_name = data.get('session_name')
+    if not new_session_name:
+        return jsonify({"success": False, "message": "Session name is required"}), 400
+    
+    try:
+        # Ensure user exists in database for chat history
+        user = ensure_user_exists_for_history(username)
+        if not user:
+            return jsonify({"success": False, "message": "Failed to create user for chat history"}), 500
+        
+        # Get the session
+        chat_session = ChatSession.query.filter_by(id=session_id, user_id=user.id).first()
+        if not chat_session:
+            return jsonify({"success": False, "message": "Session not found"}), 404
+        
+        # Check if new name already exists
+        existing_session = ChatSession.query.filter_by(
+            user_id=user.id, 
+            session_name=new_session_name
+        ).filter(ChatSession.id != session_id).first()
+        
+        if existing_session:
+            return jsonify({"success": False, "message": "Session name already exists"}), 400
+        
+        # Update session name
+        chat_session.session_name = new_session_name
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Session updated successfully",
+            "session": {
+                "id": chat_session.id,
+                "session_name": chat_session.session_name,
+                "created_at": chat_session.created_at.isoformat()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error updating chat session: {e}")
+        db.session.rollback()
+        return jsonify({"success": False, "message": "Failed to update session"}), 500
+
+@app.route('/api/chat-history/<int:session_id>', methods=['DELETE'])
+@jwt_required()
+def delete_chat_session(session_id):
+    """Delete a chat session and all its messages"""
+    username = get_jwt_identity()
+    
+    try:
+        # Ensure user exists in database for chat history
+        user = ensure_user_exists_for_history(username)
+        if not user:
+            return jsonify({"success": False, "message": "Failed to create user for chat history"}), 500
+        
+        # Get the session
+        chat_session = ChatSession.query.filter_by(id=session_id, user_id=user.id).first()
+        if not chat_session:
+            return jsonify({"success": False, "message": "Session not found"}), 404
+        
+        # Delete all messages in the session first (cascade should handle this, but explicit for safety)
+        ChatMessage.query.filter_by(session_id=session_id).delete()
+        
+        # Delete the session
+        db.session.delete(chat_session)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Session deleted successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error deleting chat session: {e}")
+        db.session.rollback()
+        return jsonify({"success": False, "message": "Failed to delete session"}), 500
+
+@app.route('/api/chat-history/<int:session_id>/messages', methods=['POST'])
+@jwt_required()
+def add_chat_message(session_id):
+    """Add a new message to a chat session"""
+    username = get_jwt_identity()
+    data = request.get_json()
+    
+    question = data.get('question')
+    answer = data.get('answer')
+    
+    if not question or not answer:
+        return jsonify({"success": False, "message": "Question and answer are required"}), 400
+    
+    try:
+        # Ensure user exists in database for chat history
+        user = ensure_user_exists_for_history(username)
+        if not user:
+            return jsonify({"success": False, "message": "Failed to create user for chat history"}), 500
+        
+        # Get the session
+        chat_session = ChatSession.query.filter_by(id=session_id, user_id=user.id).first()
+        if not chat_session:
+            return jsonify({"success": False, "message": "Session not found"}), 404
+        
+        # Create new message
+        new_message = ChatMessage(
+            session_id=session_id,
+            question=question,
+            answer=answer
+        )
+        
+        db.session.add(new_message)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Message added successfully",
+            "chat_message": {
+                "id": new_message.id,
+                "question": new_message.question,
+                "answer": new_message.answer,
+                "timestamp": new_message.timestamp.isoformat()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error adding chat message: {e}")
+        db.session.rollback()
+        return jsonify({"success": False, "message": "Failed to add message"}), 500
+
+@app.route('/api/chat-history/<int:session_id>/messages/<int:message_id>', methods=['DELETE'])
+@jwt_required()
+def delete_chat_message(session_id, message_id):
+    """Delete a specific message from a chat session"""
+    username = get_jwt_identity()
+    
+    try:
+        # Ensure user exists in database for chat history
+        user = ensure_user_exists_for_history(username)
+        if not user:
+            return jsonify({"success": False, "message": "Failed to create user for chat history"}), 500
+        
+        # Get the session
+        chat_session = ChatSession.query.filter_by(id=session_id, user_id=user.id).first()
+        if not chat_session:
+            return jsonify({"success": False, "message": "Session not found"}), 404
+        
+        # Get the message
+        chat_message = ChatMessage.query.filter_by(id=message_id, session_id=session_id).first()
+        if not chat_message:
+            return jsonify({"success": False, "message": "Message not found"}), 404
+        
+        # Delete the message
+        db.session.delete(chat_message)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Message deleted successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error deleting chat message: {e}")
+        db.session.rollback()
+        return jsonify({"success": False, "message": "Failed to delete message"}), 500
+
+@app.route('/api/chat-history/search', methods=['GET'])
+@jwt_required()
+def search_chat_history():
+    """Search chat history by question or answer content"""
+    username = get_jwt_identity()
+    query = request.args.get('q', '').strip()
+    
+    if not query:
+        return jsonify({"success": False, "message": "Search query is required"}), 400
+    
+    try:
+        # Ensure user exists in database for chat history
+        user = ensure_user_exists_for_history(username)
+        if not user:
+            return jsonify({"success": False, "message": "Failed to create user for chat history"}), 500
+        
+        # Search in messages
+        from sqlalchemy import or_
+        
+        messages = db.session.query(ChatMessage).join(ChatSession).filter(
+            ChatSession.user_id == user.id,
+            or_(
+                ChatMessage.question.ilike(f'%{query}%'),
+                ChatMessage.answer.ilike(f'%{query}%')
+            )
+        ).order_by(ChatMessage.timestamp.desc()).all()
+        
+        results = []
+        for msg in messages:
+            session = ChatSession.query.get(msg.session_id)
+            results.append({
+                "message_id": msg.id,
+                "session_id": msg.session_id,
+                "session_name": session.session_name if session else "Unknown Session",
+                "question": msg.question,
+                "answer": msg.answer,
+                "timestamp": msg.timestamp.isoformat()
+            })
+        
+        return jsonify({
+            "success": True,
+            "search_results": results,
+            "total_results": len(results),
+            "query": query
+        })
+        
+    except Exception as e:
+        logger.error(f"Error searching chat history: {e}")
+        return jsonify({"success": False, "message": "Failed to search chat history"}), 500
+
+@app.route('/api/chat-history/export/<int:session_id>', methods=['GET'])
+@jwt_required()
+def export_chat_session(session_id):
+    """Export chat session as JSON"""
+    username = get_jwt_identity()
+    
+    try:
+        # Ensure user exists in database for chat history
+        user = ensure_user_exists_for_history(username)
+        if not user:
+            return jsonify({"success": False, "message": "Failed to create user for chat history"}), 500
+        
+        # Get the session
+        chat_session = ChatSession.query.filter_by(id=session_id, user_id=user.id).first()
+        if not chat_session:
+            return jsonify({"success": False, "message": "Session not found"}), 404
+        
+        # Get messages for this session
+        messages = ChatMessage.query.filter_by(session_id=session_id).order_by(ChatMessage.timestamp).all()
+        
+        export_data = {
+            "session_info": {
+                "session_id": chat_session.id,
+                "session_name": chat_session.session_name,
+                "created_at": chat_session.created_at.isoformat(),
+                "exported_at": datetime.datetime.utcnow().isoformat(),
+                "total_messages": len(messages)
+            },
+            "messages": [
+                {
+                    "id": msg.id,
+                    "question": msg.question,
+                    "answer": msg.answer,
+                    "timestamp": msg.timestamp.isoformat()
+                } for msg in messages
+            ]
+        }
+        
+        return jsonify({
+            "success": True,
+            "export_data": export_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error exporting chat session: {e}")
+        return jsonify({"success": False, "message": "Failed to export session"}), 500
+
+def init_database():
+    """Initialize database tables and add default users"""
+    with app.app_context():
+        try:
+            # Create all tables
+            db.create_all()
+            logger.info("Database tables created successfully")
+            
+            # Add default users if they don't exist
+            default_users = [
+                {"username": "admin@123", "password": "admin123"},
+                {"username": "demo", "password": "demo123"}
+            ]
+            
+            for user_data in default_users:
+                existing_user = User.query.filter_by(username=user_data["username"]).first()
+                if not existing_user:
+                    # In a real application, you should hash passwords
+                    new_user = User(
+                        username=user_data["username"],
+                        password_hash=user_data["password"]  # In production, use proper hashing
+                    )
+                    db.session.add(new_user)
+                    logger.info(f"Created default user: {user_data['username']}")
+            
+            db.session.commit()
+            logger.info("Database initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Database initialization failed: {e}")
+            raise
+
 if __name__ == '__main__':
+    # Initialize database before running the app
+    init_database()
     app.run(debug=True, host='0.0.0.0', port=5000)

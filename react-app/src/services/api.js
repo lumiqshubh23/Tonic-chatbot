@@ -143,6 +143,72 @@ export const sessionAPI = {
   }
 };
 
+export const chatHistoryAPI = {
+  // Get all chat history for the user
+  getAllChatHistory: async () => {
+    const response = await api.get('/chat-history');
+    return response.data;
+  },
+  
+  // Get specific session history
+  getSessionHistory: async (sessionId) => {
+    const response = await api.get(`/chat-history/${sessionId}`);
+    return response.data;
+  },
+  
+  // Create new chat session
+  createChatSession: async (sessionName) => {
+    console.log('Creating chat session with name:', sessionName);
+    const payload = { session_name: sessionName };
+    console.log('Request payload:', payload);
+    
+    const response = await api.post('/chat-history', payload);
+    console.log('Create session response:', response.data);
+    return response.data;
+  },
+  
+  // Update chat session name
+  updateChatSession: async (sessionId, newName) => {
+    const response = await api.put(`/chat-history/${sessionId}`, {
+      session_name: newName
+    });
+    return response.data;
+  },
+  
+  // Delete chat session
+  deleteChatSession: async (sessionId) => {
+    const response = await api.delete(`/chat-history/${sessionId}`);
+    return response.data;
+  },
+  
+  // Add message to session
+  addMessage: async (sessionId, question, answer) => {
+    const response = await api.post(`/chat-history/${sessionId}/messages`, {
+      question,
+      answer
+    });
+    return response.data;
+  },
+  
+  // Delete specific message
+  deleteMessage: async (sessionId, messageId) => {
+    const response = await api.delete(`/chat-history/${sessionId}/messages/${messageId}`);
+    return response.data;
+  },
+  
+  // Search chat history
+  searchChatHistory: async (query) => {
+    const response = await api.get(`/chat-history/search?q=${encodeURIComponent(query)}`);
+    return response.data;
+  },
+  
+  // Export chat session
+  exportSession: async (sessionId) => {
+    const response = await api.get(`/chat-history/export/${sessionId}`);
+    return response.data;
+  }
+};
+
 export const healthAPI = {
   check: async () => {
     const response = await api.get('/health');
