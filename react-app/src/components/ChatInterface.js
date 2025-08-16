@@ -53,7 +53,7 @@ const InputSection = styled.div`
 const InputForm = styled.form`
   display: flex;
   gap: 12px;
-  align-items: flex-end;
+  align-items: center;
   width: 100%;
   flex: 1;
 `;
@@ -199,7 +199,7 @@ const InputWrapper = styled.div`
   position: relative;
   display: flex;
   gap: 12px;
-  align-items: flex-end;
+  align-items: center;
   width: 100%;
 `;
 

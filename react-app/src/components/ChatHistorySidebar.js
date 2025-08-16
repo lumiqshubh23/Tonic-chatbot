@@ -44,7 +44,8 @@ const Header = styled.div`
 `;
 
 const NewChatButton = styled.button`
-  width: 100%;
+  width: calc(100% - 40px);
+  margin: 20px 20px 20px 20px;
   padding: 12px 16px;
   background: transparent;
   border: 1px solid #4a4a4a;
@@ -54,8 +55,8 @@ const NewChatButton = styled.button`
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  margin-bottom: 20px;
   
   &:hover {
     background: #4a4a4a;
