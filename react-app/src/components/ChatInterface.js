@@ -664,7 +664,8 @@ function ChatInterface({ currentSessionId, currentSessionData, onSessionChange, 
         if (response.plot) {
           console.log('🎨 Plot data received:', {
             plotDataLength: response.plot.length,
-            plotDataPreview: response.plot.substring(0, 100) + '...'
+            plotDataPreview: response.plot.substring(0, 100) + '...',
+            plotDataEnd: response.plot.substring(response.plot.length - 50) + '...'
           });
         }
         
@@ -674,6 +675,17 @@ function ChatInterface({ currentSessionId, currentSessionData, onSessionChange, 
             plotCodePreview: response.plot_code.substring(0, 200) + '...'
           });
         }
+        
+        // Log the complete response structure
+        console.log('📊 Complete response structure:', {
+          success: response.success,
+          hasResponse: !!response.response,
+          hasTables: !!response.tables,
+          hasPlot: !!response.plot,
+          hasPlotCode: !!response.plot_code,
+          hasSources: !!response.sources,
+          timestamp: response.timestamp
+        });
 
         setMessages(prev => [...prev, aiMessage]);
 

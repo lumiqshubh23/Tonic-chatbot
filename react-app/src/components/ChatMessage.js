@@ -498,6 +498,19 @@ function ChatMessage({ message }) {
                           Generated Visualization
                         </SectionTitle>
                         
+                        {/* Debug info */}
+                        {process.env.NODE_ENV === 'development' && (
+                          <div style={{ 
+                            background: '#f0f0f0', 
+                            padding: '8px', 
+                            margin: '8px 0', 
+                            borderRadius: '4px', 
+                            fontSize: '12px' 
+                          }}>
+                            Debug: Plot={!!message.plot}, PlotCode={!!message.plot_code}
+                          </div>
+                        )}
+                        
                         {/* Use ChartRenderer for interactive charts */}
                         {message.plot_code && (
                           <ErrorBoundary>
@@ -509,7 +522,7 @@ function ChatMessage({ message }) {
                         )}
                         
                         {/* Fallback to base64 image if available */}
-                        {message.plot && !message.plot_code && (
+                        {message.plot && (
                           <PlotContainer>
                             <PlotTitle>
                               <BarChart3 size={16} />
@@ -518,6 +531,8 @@ function ChatMessage({ message }) {
                             <PlotImage 
                               src={`data:image/png;base64,${message.plot}`} 
                               alt="Generated Plot"
+                              onLoad={() => console.log('✅ Plot image loaded successfully')}
+                              onError={(e) => console.error('❌ Plot image failed to load:', e)}
                             />
                             <PlotDownloadButton onClick={() => downloadPlotAsPNG(message.plot)}>
                               <Download size={16} />
