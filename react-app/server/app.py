@@ -92,8 +92,22 @@ PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
 
 # Configure AI models
 try:
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+    
+    if gemini_key:
+        genai.configure(api_key=gemini_key)
+        logger.info("✅ Gemini API configured successfully")
+    else:
+        logger.warning("⚠️ GEMINI_API_KEY not found in environment variables")
+    
+    if openai_key:
+        openai_client = openai.OpenAI(api_key=openai_key)
+        logger.info("✅ OpenAI API configured successfully")
+    else:
+        logger.warning("⚠️ OPENAI_API_KEY not found in environment variables")
+        openai_client = None
+        
 except Exception as e:
     logger.error(f"Failed to configure AI models: {e}")
     # Initialize with None if configuration fails
@@ -292,7 +306,14 @@ def get_perplexity_response(prompt, conversation_history=None, model="sonar"):
                 tmp_c = j.get('title') + " - " + j.get('url')
                 citations = citations + tmp_c + " \n "
             
-            return response.json()["choices"][0]["message"]["content"], citations
+            assistant_response = response.json()["choices"][0]["message"]["content"]
+            
+            # Console logging for Perplexity Assistant Response
+            logger.info("🤖 Perplexity Assistant Response:")
+            logger.info(f"Response: {assistant_response}")
+            print(f"🤖 Perplexity Assistant Response: {assistant_response}")
+            
+            return assistant_response, citations
         else:
             logger.error(f"Perplexity API error: {response.status_code} - {response.text}")
             return f"❌ Perplexity error: {response.status_code}: {response.text}", ""
@@ -308,68 +329,64 @@ def extract_code(text):
 
 def generate_plot_code(knowledge, query, reply):
     """Generate matplotlib code for visualization"""
-    if openai_client is None:
-        logger.error("OpenAI client not configured, skipping plot generation")
-        return None
-        
-    # Extract data from the AI response if it contains tables
-    extracted_data = extract_data_from_response(reply)
-    logger.info(f"📊 Extracted data from AI response: {extracted_data[:200]}...")
+    system_prompt = """You are a Python assistant. Output only valid matplotlib code using data given to you. You can generate multiple plots, so generate code in that way. If there is no sufficient Knowledge Base data, rely on the Answer.
+
+IMPORTANT INSTRUCTIONS FOR BUSINESS DATA:
+1. For media plans and marketing data, create meaningful visualizations like:
+   - Bar charts for budget allocation across platforms
+   - Pie charts for audience size breakdown (TAM, SAM, SOM)
+   - Line charts for performance metrics (CPC, CPM, CTR)
+   - Horizontal bar charts for platform comparisons
+2. Use professional colors and styling
+3. Include proper titles, labels, and legends
+4. Make charts readable and presentation-ready
+5. Extract data from tables in the response if available"""
     
-    # If no data found in response, generate sample data based on query
-    if "No structured data found" in extracted_data:
-        sample_data = generate_sample_data_for_query(query)
-        extracted_data = f"""Sample data generated for query:
-Categories: {sample_data['categories']}
-Values: {sample_data['values']}
-Title: {sample_data['title']}
-X-axis: {sample_data['xlabel']}
-Y-axis: {sample_data['ylabel']}"""
-        logger.info(f"📊 Generated sample data: {sample_data}")
-    else:
-        logger.info(f"📊 Using extracted data from AI response")
+    user_prompt = f"""Knowledge Base:\n{knowledge}\n\nUser Query:\n{query}\n\nAnswer:\n{reply}"""
     
-    system_prompt = """You are a Python assistant. Output only valid matplotlib code using data given to you. 
+    # Try OpenAI first
+    if openai_client is not None:
+        try:
+            response = openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3
+            )
+            plot_code = extract_code(response.choices[0].message.content)
+            
+            # Console logging for Plot Generation
+            logger.info("🎨 Plot Code Generated (OpenAI):")
+            logger.info(f"Plot Code: {plot_code}")
+            print(f"🎨 Plot Code Generated (OpenAI): {plot_code}")
+            
+            return plot_code
+        except Exception as e:
+            logger.error(f"OpenAI code generation failed: {e}")
     
-    IMPORTANT INSTRUCTIONS:
-    1. If data is provided in the response, use that data for plotting
-    2. If no specific data is provided, create sample data based on the query context
-    3. Always create a meaningful visualization that matches the user's request
-    4. Use appropriate chart types: bar charts for comparisons, line charts for trends, pie charts for proportions
-    5. Include proper labels, titles, and formatting
-    6. Use the provided sample data if no other data is available
+    # Fallback to Perplexity if OpenAI is not available or fails
+    if PERPLEXITY_API_KEY:
+        try:
+            logger.info("🔄 Falling back to Perplexity for plot generation")
+            response = get_perplexity_response(
+                f"{system_prompt}\n\n{user_prompt}",
+                model="sonar"
+            )
+            plot_code = extract_code(response[0])  # response is (content, sources)
+            
+            # Console logging for Plot Generation
+            logger.info("🎨 Plot Code Generated (Perplexity):")
+            logger.info(f"Plot Code: {plot_code}")
+            print(f"🎨 Plot Code Generated (Perplexity): {plot_code}")
+            
+            return plot_code
+        except Exception as e:
+            logger.error(f"Perplexity code generation failed: {e}")
     
-    Example format:
-    import matplotlib.pyplot as plt
-    import numpy as np
-    
-    # Data (use provided data or create sample data)
-    categories = ['Category A', 'Category B', 'Category C']
-    values = [10, 20, 15]
-    
-    plt.figure(figsize=(10, 6))
-    plt.bar(categories, values, color='red')
-    plt.title('Chart Title')
-    plt.xlabel('Categories')
-    plt.ylabel('Values')
-    plt.tight_layout()
-    """
-    
-    user_prompt = f"""Knowledge Base:\n{knowledge}\n\nUser Query:\n{query}\n\nAI Response:\n{reply}\n\nExtracted Data:\n{extracted_data}"""
-    
-    try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.3
-        )
-        return extract_code(response.choices[0].message.content)
-    except Exception as e:
-        logger.error(f"Code generation failed: {e}")
-        return None
+    logger.error("No AI service available for plot generation")
+    return None
 
 def extract_data_from_response(response):
     """Extract structured data from AI response for plotting"""
@@ -640,60 +657,72 @@ def chat():
     if not knowledge_base and username in knowledge_bases:
         knowledge_base = knowledge_bases[username]
     
-    # Base chat prompt
+    # Base chat prompt - Enhanced to match Streamlit app quality
     base_chat_prompt = (
-        "You are an intelligent assistant. Use the extracted knowledge base if it's available to answer user queries. "
-        "In addition, rely on your own knowledge whenever needed, based on the user's input. "
-        "If the answer cannot be found in the knowledge base, use your general understanding to respond.\n\n"
+"You are an intelligent assistant. Use the extracted knowledge base if it's available to answer user queries. "
+"In addition, rely on your own knowledge whenever needed, based on the user's input. "
+"If the answer cannot be found in the knowledge base, use your general understanding to respond.\n\n"
 
-        "IMPORTANT FORMATTING:\n"
-        "- When presenting tabular data, format it as markdown tables using `|` symbols.\n"
-        "- Example:\n"
-        "  | Column 1 | Column 2 |\n"
-        "  |----------|----------|\n"
-        "  | Data 1   | Data 2   |\n\n"
+"IMPORTANT FORMATTING:\n"
+"- When presenting tabular data, format it as markdown tables using `|` symbols.\n"
+"- Example:\n"
+"  | Column 1 | Column 2 |\n"
+"  |----------|----------|\n"
+"  | Data 1   | Data 2   |\n\n"
 
-                    "**POINTS TO KEEP IN MIND:**\n"
-            "- If the user requests Excel-like output, assume tabular format and provide markdown directly.\n"
-            "  Mention that this product allows instant download of the generated table.\n"
-            "- If the user requests graphs, plots, or charts, provide the data in a structured format (like a markdown table) that can be used for visualization. "
-            "A separate module in the system will handle the actual chart generation.\n"
-            "- If relevant information isn't found in the knowledge base, use your own understanding to answer accurately.\n"
-            "- Always consider the user input carefully. Combine it with the knowledge base and your knowledge to generate accurate and context-aware responses.\n"
-            "- Maintain conversational context by referring to previous user queries where appropriate. If the query is entirely new, don't use previous knowledge.\n\n"
+"**POINTS TO KEEP IN MIND:**\n"
+"- If the user requests Excel-like output, assume tabular format and provide markdown directly.\n"
+"  Mention that this product allows instant download of the generated table.\n"
+"- If the user requests graphs, plots, or charts, do not generate them. "
+"A separate module in the system handles visualizations.\n"
+"- If relevant information isn't found in the knowledge base, use your own understanding to answer accurately.\n"
+"- Always consider the user input carefully. Combine it with the knowledge base and your knowledge to generate accurate and context-aware responses.\n"
+"- Maintain conversational context by referring to previous user queries where appropriate. If the query is entirely new, don't use previous knowledge.\n\n"
 
-        "**SPECIAL FORMAT — MEDIA PLAN REQUESTS:**\n"
-        "- If the user asks for a *media plan* or requests *marketing metrics across platforms*, present the data in TONIC-style format.\n"
-        "- TONIC-style table format:\n"
-        "  1. Start with a title (e.g., 'Plan KSA') on top.\n"
-        "  2. First table row = main metric headers: Medium, Clicks, CPC, Impressions, CPM, Views, CPV, CTR, Leads, CPL, Total Cost.\n"
-        "  3. Second row = subheaders (e.g., Channel, Exp. Link Clicks, etc.).\n"
-        "  4. List each platform (e.g., TikTok, YouTube) in a row with corresponding metrics.\n"
-        "  5. At the bottom, include summary rows: Net Total, Total Clicks, Impressions, Views, etc.\n"
-        "  6. Format the entire table in markdown using `|`, just like other tables.\n"
-        "  7. Do not explain the table — output the TONIC table directly with any other requested info (like recommendations or insights).\n"
-        "- Example:\n"
-        "\n"
-        "  Plan KSA  \n"
-        "  | Medium | Clcks | CPC | Impressions | CPM | Views | CPV | CTR | Leads | CPL | Total Cost |\n"
-        "  | Channel | Exp. Link Clicks | Exp. Tonic CPC | Exp. Impressions | Exp. Tonic CPM | Video Views | Exp. Tonic CPV | Exp.CTR | | Budget |\n"
-        "  | Tiktok Ad | 11,630 | AED1.29 | 2,907,540 | AED5.16 | 67,843 | AED0.22 | 0.40 | 150 | 100 | 15000 |\n"
-        "  | Facebook/Instagram | 18,367 | AED1.47 | 6,679,035 | AED4.04 | 734,694 | AED0.04 | 0.28 | 270 | 100 | 27000 |\n"
-        "  | Twitter X | 4,511 | AED1.40 | 1,051,709 | AED5.99 | 11,429 | AED0.55 | 0.43 | 63 | 100 | 6300 |\n"
-        "  | YouTube Ads | 5,630 | AED2.13 | 806,248 | AED14.88 | 544,218 | AED0.02 | 0.70 | 120 | 100 | 12000 |\n"
-        "  | Search Ads | 5,246 | AED2.21 |  |  |  |  |  | 116 | 100 | 11600 |\n"
-        "  | Google Display Ads | 7,850 | AED1.03 | 2,448,980 | AED3.31 | NA | NA | 0.32 | 81 | 100 | 8100 |\n"
-        "  | | | | | | | | | | | |\n"
-        "  | | | | | | | | Net Total | AED80,000 | | |\n"
-        "  | | | | | | | | Total Clicks | 53,235 | | |\n"
-        "  | | | | | | | | Total Impressions | 13,893,513 | | |\n"
-        "  | | | | | | | | Total Views | 1,358,183 | | |\n\n"
+"**SPECIAL FORMAT — MEDIA PLAN REQUESTS:**\n"
+"- If the user asks for a *media plan* or requests *marketing metrics across platforms*, present the data in TONIC-style format.\n"
+"- TONIC-style table format:\n"
+"  1. Start with a title (e.g., 'Plan KSA') on top.\n"
+"  2. First table row = main metric headers: Medium, Clicks, CPC, Impressions, CPM, Views, CPV, CTR, Leads, CPL, Total Cost.\n"
+"  3. Second row = subheaders (e.g., Channel, Exp. Link Clicks, etc.).\n"
+"  4. List each platform (e.g., TikTok, YouTube) in a row with corresponding metrics.\n"
+"  5. At the bottom, include summary rows: Net Total, Total Clicks, Impressions, Views, etc.\n"
+"  6. Format the entire table in markdown using `|`, just like other tables.\n"
+"  7. Do not explain the table — output the TONIC table directly with any other requested info (like recommendations or insights).\n"
+"- Example:\n"
+"\n"
+"  Plan KSA  \n"
+"  | Medium | Clcks | CPC | Impressions | CPM | Views | CPV | CTR | Leads | CPL | Total Cost |\n"
+"  | Channel | Exp. Link Clicks | Exp. Tonic CPC | Exp. Impressions | Exp. Tonic CPM | Video Views | Exp. Tonic CPV | Exp.CTR | | Budget |\n"
+"  | Tiktok Ad | 11,630 | AED1.29 | 2,907,540 | AED5.16 | 67,843 | AED0.22 | 0.40 | 150 | 100 | 15000 |\n"
+"  | Facebook/Instagram | 18,367 | AED1.47 | 6,679,035 | AED4.04 | 734,694 | AED0.04 | 0.28 | 270 | 100 | 27000 |\n"
+"  | Twitter X | 4,511 | AED1.40 | 1,051,709 | AED5.99 | 11,429 | AED0.55 | 0.43 | 63 | 100 | 6300 |\n"
+"  | YouTube Ads | 5,630 | AED2.13 | 806,248 | AED14.88 | 544,218 | AED0.02 | 0.70 | 120 | 100 | 12000 |\n"
+"  | Search Ads | 5,246 | AED2.21 |  |  |  |  |  | 116 | 100 | 11600 |\n"
+"  | Google Display Ads | 7,850 | AED1.03 | 2,448,980 | AED3.31 | NA | NA | 0.32 | 81 | 100 | 8100 |\n"
+"  | | | | | | | | | | | |\n"
+"  | | | | | | | | Net Total | AED80,000 | | |\n"
+"  | | | | | | | | Total Clicks | 53,235 | | |\n"
+"  | | | | | | | | Total Impressions | 13,893,513 | | |\n"
+"  | | | | | | | | Total Views | 1,358,183 | | |\n\n"
 
-        "- Use this format **only** if the user's query is about media planning, digital ad performance, or channel-level budget/performance comparison.\n"
+"- Use this format **only** if the user's query is about media planning, digital ad performance, or channel-level budget/performance comparison.\n"
 
-        "- Also provide list of sources/URLs as Sources:\n"
-        "  from where you have gathered all the data (list no more than 5)\n"
-        "  - ALSO NEVER LIST ANY SOURCES RELATED TO FORMATTING, ETC. LIST ONLY DATA SOURCES"
+"**ENHANCED MEDIA PLAN FORMAT FOR CLIENT PITCHING:**\n"
+"- When users request media plans for client pitching, provide a comprehensive structured response including:\n"
+"  1. **Audience Size Details** - TAM, SAM, SOM breakdown\n"
+"  2. **Target Audience** - Demographics, psychographics, behavioral patterns\n"
+"  3. **Approach** - Strategy, objectives, and methodology\n"
+"  4. **Media Plan with Platform Split** - Detailed metrics table with all KPIs\n"
+"  5. **Notes for PPT Presentation** - Guidelines for creating presentation slides\n"
+"- Format the response with clear sections using markdown headers (###)\n"
+"- Include detailed explanations and insights for each section\n"
+"- Provide realistic and comprehensive data for all metrics\n"
+"- Add presentation tips and visual guidance for client pitches\n"
+
+"- Also provide list of sources/URLs as Sources:\n"
+"  from where you have gathered all the data (list no more than 5)\n"
+"  - ALSO NEVER LIST ANY SOURCES RELATED TO FORMATTING, ETC. LIST ONLY DATA SOURCES"
     )
     
     full_prompt = (
@@ -704,6 +733,13 @@ def chat():
     
     # Get AI response
     ai_response, sources = get_perplexity_response(full_prompt, conversation_history)
+    
+    # Console logging for Assistant Response
+    logger.info("🤖 Assistant Response:")
+    logger.info(f"Response: {ai_response}")
+    if sources:
+        logger.info(f"Sources: {sources}")
+    print(f"🤖 Assistant Response: {ai_response}")
     
     # Debug: Log the AI response for plot-related queries
     if any(word in question.lower() for word in ["graph", "plot", "chart", "visual", "visualization", "diagram"]):
@@ -718,68 +754,55 @@ def chat():
     plot_data = None
     plot_code_data = None
     
-    # Check if plot generation is requested
-    plot_keywords = ["graph", "plot", "chart", "visual", "visualization", "chart", "diagram"]
-    should_generate_plot = any(word in question.lower() for word in plot_keywords)
-    
-    logger.info(f"📊 Plot generation check for question: '{question}'")
-    logger.info(f"📊 Should generate plot: {should_generate_plot}")
-    logger.info(f"📊 Plot keywords found: {[word for word in plot_keywords if word in question.lower()]}")
+    # ========== PLOT GENERATION ========== #
+    # Check if plot generation is requested OR if there's tabular data that could be visualized
+    should_generate_plot = (
+        any(word in question.lower() for word in ["graph", "plot", "chart", "visual"]) or
+        (tables and len(tables) > 0) or  # Generate plot if tables are found
+        any(word in question.lower() for word in ["media plan", "marketing", "campaign", "metrics", "data"])  # Generate for business data
+    )
     
     if should_generate_plot:
+        logger.info(f"🎨 Generating plot for question: {question}")
+        logger.info(f"🎨 Plot trigger: Tables found={len(tables) if tables else 0}, Keywords found={[word for word in ['graph', 'plot', 'chart', 'visual', 'media plan', 'marketing', 'campaign', 'metrics', 'data'] if word in question.lower()]}")
         
-        # Try multiple attempts like in Streamlit
         for attempt in range(3):
             logger.info(f"🎨 Plot generation attempt {attempt + 1}")
-            plot_code = generate_plot_code(knowledge_base, question, ai_response)
-            
+            plot_code = generate_plot_code(
+                knowledge_base,
+                question,
+                ai_response
+            )
+
             if plot_code:
-                logger.info(f"🎨 Plot code generated, length: {len(plot_code)} characters")
-                plot_code_data = plot_code  # Always send the plot code to React
-                
                 try:
-                    # Clear any existing plots
                     plt.clf()
-                    plt.close('all')
-                    
-                    # Set up execution environment (simpler like Streamlit)
                     exec_globals = {"plt": plt, "__name__": "__main__", "pd": pd}
-                    
-                    # Clean up the plot code
                     plot_code = re.sub(r"plt\.show\(\)", "", plot_code)
-                    
-                    # Execute the plot code
                     exec(plot_code, exec_globals)
-                    
-                    # Get the current figure
+
                     fig = plt.gcf()
-                    if fig is None:
-                        logger.warning("No figure found after executing plot code")
-                        continue  # Try next attempt
-                    
-                    # Save the plot to bytes
+
                     buf = io.BytesIO()
                     fig.savefig(buf, format="png", dpi=300, bbox_inches='tight')
                     buf.seek(0)
+
                     plot_data = base64.b64encode(buf.getvalue()).decode("utf-8")
+                    plot_code_data = plot_code
                     plt.close(fig)
-                    logger.info(f"✅ Plot generated successfully on attempt {attempt + 1}, size: {len(plot_data)} characters")
-                    break  # Success, exit the retry loop
-                    
+                    logger.info(f"✅ Plot generated successfully on attempt {attempt + 1}")
+                    break
+
                 except Exception as e:
-                    logger.error(f"Plot generation failed on attempt {attempt + 1}: {e}")
-                    print(f"\n❌ PLOT GENERATION ERROR (Attempt {attempt + 1}): {e}")
-                    print(f"📝 Question: {question}")
-                    print(f"🎨 Plot Code: {plot_code}")
-                    print(f"{'='*80}\n")
-                    
+                    logger.error(f"⚠️ Plot failed on attempt {attempt + 1}: {e}")
                     if attempt == 2:  # Last attempt
-                        # Still send the plot code even if generation fails
                         plot_code_data = plot_code
             else:
                 logger.warning(f"No plot code generated on attempt {attempt + 1}")
                 if attempt == 2:  # Last attempt
                     break
+    else:
+        logger.info(f"🎨 Plot generation skipped - no trigger conditions met")
     
     # Store in session (in-memory)
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
