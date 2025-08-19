@@ -20,13 +20,14 @@ import ChatHistorySearch from './ChatHistorySearch';
 import LogoutModal from './LogoutModal';
 
 const SidebarContainer = styled.div`
-  width: 300px;
+  width: 320px;
   background: #202123;
   color: white;
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-right: 1px solid #4a4a4a;
   
   @media (max-width: 768px) {
     width: 100%;
@@ -36,19 +37,20 @@ const SidebarContainer = styled.div`
 `;
 
 const Header = styled.div`
-  padding: 20px;
+  padding: 20px 20px 16px;
   border-bottom: 1px solid #4a4a4a;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  background: #2a2b2d;
 `;
 
 const NewChatButton = styled.button`
   width: calc(100% - 40px);
-  margin: 20px 20px 20px 20px;
+  margin: 16px 20px;
   padding: 12px 16px;
-  background: transparent;
-  border: 1px solid #4a4a4a;
+  background: #404040;
+  border: 1px solid #5a5a5a;
   border-radius: 8px;
   color: white;
   cursor: pointer;
@@ -57,25 +59,34 @@ const NewChatButton = styled.button`
   align-items: center;
   justify-content: center;
   gap: 8px;
+  font-weight: 500;
+  font-size: 14px;
   
   &:hover {
-    background: #4a4a4a;
+    background: #505050;
+    border-color: #6a6a6a;
+    transform: translateY(-1px);
+  }
+  
+  &:active {
+    transform: translateY(0);
   }
 `;
 
 const SearchContainer = styled.div`
-  padding: 0 20px 20px;
+  padding: 0 20px 16px;
   position: relative;
 `;
 
 const SearchInput = styled.input`
   width: 100%;
-  padding: 10px 12px 10px 40px;
+  padding: 12px 12px 12px 44px;
   background: #404040;
-  border: 1px solid #4a4a4a;
-  border-radius: 8px;
+  border: 1px solid #5a5a5a;
+  border-radius: 10px;
   color: white;
   font-size: 14px;
+  transition: all 0.2s ease;
   
   &::placeholder {
     color: #a0a0a0;
@@ -84,12 +95,14 @@ const SearchInput = styled.input`
   &:focus {
     outline: none;
     border-color: #FF6B35;
+    background: #454545;
+    box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.1);
   }
 `;
 
 const SearchIcon = styled(Search)`
   position: absolute;
-  left: 32px;
+  left: 36px;
   top: 50%;
   transform: translateY(-50%);
   color: #a0a0a0;
@@ -99,7 +112,25 @@ const SearchIcon = styled(Search)`
 const SessionsContainer = styled.div`
   flex: 1;
   overflow-y: auto;
-  padding: 0 20px;
+  padding: 8px 20px;
+  
+  /* Custom scrollbar */
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: #202123;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: #4a4a4a;
+    border-radius: 3px;
+  }
+  
+  &::-webkit-scrollbar-thumb:hover {
+    background: #5a5a5a;
+  }
 `;
 
 const SessionItem = styled.div`
@@ -112,14 +143,18 @@ const SessionItem = styled.div`
   align-items: center;
   justify-content: space-between;
   position: relative;
+  border: 1px solid transparent;
   
   ${props => props.active && `
     background: #404040;
+    border-color: #FF6B35;
+    box-shadow: 0 2px 8px rgba(255, 107, 53, 0.2);
   `}
   
   ${props => !props.active && `
     &:hover {
-      background: #404040;
+      background: #353535;
+      border-color: #5a5a5a;
     }
   `}
 `;
@@ -127,6 +162,10 @@ const SessionItem = styled.div`
 const SessionInfo = styled.div`
   flex: 1;
   min-width: 0;
+  margin-right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 `;
 
 const SessionName = styled.div`
@@ -137,6 +176,8 @@ const SessionName = styled.div`
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.3;
+  max-width: 200px;
 `;
 
 const SessionMeta = styled.div`
@@ -144,12 +185,13 @@ const SessionMeta = styled.div`
   color: #a0a0a0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  line-height: 1.2;
 `;
 
 const SessionActions = styled.div`
   display: flex;
-  gap: 4px;
+  gap: 2px;
   opacity: 0;
   transition: opacity 0.2s ease;
   
@@ -165,29 +207,35 @@ const ActionButton = styled.button`
   padding: 4px;
   border-radius: 4px;
   color: #a0a0a0;
+  transition: all 0.2s ease;
   
   &:hover {
     background: #4a4a4a;
     color: white;
+    transform: scale(1.05);
   }
 `;
 
 const UserSection = styled.div`
   padding: 20px;
   border-top: 1px solid #4a4a4a;
-  background: #202123;
+  background: #2a2b2d;
 `;
 
 const UserInfo = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #404040;
+  border-radius: 10px;
+  border: 1px solid #5a5a5a;
 `;
 
 const UserAvatar = styled.div`
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   background: linear-gradient(135deg, #FF6B35 0%, #e53e3e 100%);
   border-radius: 50%;
   display: flex;
@@ -195,7 +243,8 @@ const UserAvatar = styled.div`
   justify-content: center;
   color: white;
   font-weight: bold;
-  font-size: 14px;
+  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(255, 107, 53, 0.3);
 `;
 
 const UserDetails = styled.div`
@@ -204,47 +253,77 @@ const UserDetails = styled.div`
 
 const UserName = styled.div`
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   color: white;
+  margin-bottom: 2px;
 `;
 
 const UserStatus = styled.div`
   font-size: 12px;
   color: #a0a0a0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  
+  &::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: #4ade80;
+    border-radius: 50%;
+    display: inline-block;
+  }
 `;
 
 const LogoutButton = styled.button`
   width: 100%;
-  padding: 8px 12px;
-  background: transparent;
-  border: 1px solid #4a4a4a;
-  border-radius: 6px;
+  padding: 12px 16px;
+  background: #404040;
+  border: 1px solid #5a5a5a;
+  border-radius: 10px;
   color: #a0a0a0;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 14px;
+  font-weight: 500;
   
   &:hover {
-    background: #4a4a4a;
+    background: #505050;
+    border-color: #6a6a6a;
     color: white;
+    transform: translateY(-1px);
+  }
+  
+  &:active {
+    transform: translateY(0);
   }
 `;
 
 const EmptyState = styled.div`
   text-align: center;
-  padding: 40px 20px;
+  padding: 60px 20px;
   color: #a0a0a0;
+  
+  svg {
+    margin-bottom: 16px;
+    opacity: 0.5;
+  }
+  
+  div {
+    font-size: 14px;
+    line-height: 1.4;
+  }
 `;
 
 const LoadingSpinner = styled.div`
   display: inline-block;
-  width: 20px;
-  height: 20px;
-  border: 2px solid #4a4a4a;
+  width: 24px;
+  height: 24px;
+  border: 3px solid #4a4a4a;
   border-radius: 50%;
   border-top-color: #FF6B35;
   animation: spin 1s ease-in-out infinite;
@@ -260,40 +339,52 @@ const CreateSessionModal = styled.div`
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  backdrop-filter: blur(4px);
 `;
 
 const ModalContent = styled.div`
-  background: #404040;
-  padding: 24px;
-  border-radius: 12px;
-  width: 400px;
+  background: #2a2b2d;
+  padding: 28px;
+  border-radius: 16px;
+  width: 420px;
   max-width: 90vw;
+  border: 1px solid #4a4a4a;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
 `;
 
 const ModalTitle = styled.h3`
   color: white;
-  margin: 0 0 16px 0;
-  font-size: 18px;
+  margin: 0 0 20px 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
 `;
 
 const ModalInput = styled.input`
   width: 100%;
-  padding: 12px;
-  background: #202123;
-  border: 1px solid #4a4a4a;
-  border-radius: 8px;
+  padding: 14px 16px;
+  background: #404040;
+  border: 1px solid #5a5a5a;
+  border-radius: 10px;
   color: white;
   font-size: 14px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  transition: all 0.2s ease;
+  
+  &::placeholder {
+    color: #a0a0a0;
+  }
   
   &:focus {
     outline: none;
     border-color: #FF6B35;
+    background: #454545;
+    box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.1);
   }
 `;
 
@@ -304,9 +395,10 @@ const ModalButtons = styled.div`
 `;
 
 const ModalButton = styled.button`
-  padding: 8px 16px;
-  border-radius: 6px;
+  padding: 10px 20px;
+  border-radius: 8px;
   font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
   
@@ -317,17 +409,23 @@ const ModalButton = styled.button`
     
     &:hover {
       background: #e53e3e;
+      transform: translateY(-1px);
+    }
+    
+    &:active {
+      transform: translateY(0);
     }
   }
   
   &.secondary {
-    background: transparent;
+    background: #404040;
     color: #a0a0a0;
-    border: 1px solid #4a4a4a;
+    border: 1px solid #5a5a5a;
     
     &:hover {
-      background: #4a4a4a;
+      background: #505050;
       color: white;
+      border-color: #6a6a6a;
     }
   }
 `;
@@ -541,6 +639,8 @@ const ChatHistorySidebar = React.forwardRef(({ currentSessionId, setCurrentSessi
     if (diffDays === 1) return 'Today';
     if (diffDays === 2) return 'Yesterday';
     if (diffDays <= 7) return `${diffDays - 1} days ago`;
+    if (diffDays <= 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+    if (diffDays <= 365) return `${Math.floor(diffDays / 30)} months ago`;
     return date.toLocaleDateString();
   };
 
@@ -551,12 +651,26 @@ const ChatHistorySidebar = React.forwardRef(({ currentSessionId, setCurrentSessi
   return (
     <SidebarContainer>
       <Header>
-        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>Chat History</h2>
+        <h2 style={{ 
+          margin: 0, 
+          fontSize: '20px', 
+          fontWeight: '700',
+          color: 'white',
+          letterSpacing: '-0.5px'
+        }}>
+          Chat History
+        </h2>
         <ActionButton
           onClick={() => setShowSearchModal(true)}
           title="Search conversations"
+          style={{
+            background: '#404040',
+            border: '1px solid #5a5a5a',
+            borderRadius: '8px',
+            padding: '8px'
+          }}
         >
-          <Search size={16} />
+          <Search size={18} />
         </ActionButton>
       </Header>
 
@@ -623,9 +737,9 @@ const ChatHistorySidebar = React.forwardRef(({ currentSessionId, setCurrentSessi
                 </SessionName>
                 <SessionMeta>
                   <Clock size={12} />
-                  {formatDate(session.created_at)}
-                  <span>•</span>
-                  {session.message_count} messages
+                  <span>{formatDate(session.created_at)}</span>
+                  <span style={{ color: '#666', fontSize: '10px' }}>•</span>
+                  <span>{session.message_count} message{session.message_count !== 1 ? 's' : ''}</span>
                 </SessionMeta>
               </SessionInfo>
               
